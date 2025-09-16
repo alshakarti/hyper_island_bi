@@ -1,1 +1,1 @@
-# hyper_island_bi
+# Hyper Island business intelligence course files
