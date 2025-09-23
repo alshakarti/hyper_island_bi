@@ -74,13 +74,8 @@ def sales_funnel_viz(df, weighted_amount=True):
         height=500,
         width=800
     )
-    fig.show()
     
-    # display a summary table
-    print(f"\nSales Funnel Summary ({amount_title}):")
-    summary_df = funnel_data[['stage_label', 'deal_count', 'amount_fmt']]
-    summary_df.columns = ['Stage', 'Deal Count', f'{amount_title} (SEK)']
-    print(summary_df)
+    return fig
     
 # second version with weighted amount and time range filter 
 def sales_funnel_viz2(df, weighted_amount=True, time_filter_start=None, time_filter_stop=None):
@@ -188,12 +183,8 @@ def sales_funnel_viz2(df, weighted_amount=True, time_filter_start=None, time_fil
         },
         height=500,
         width=800
-    )
-    fig.show()
-    print(f"\nSales Funnel Summary ({amount_title}){date_range_text}:")
-    summary_df = funnel_data[['stage_label', 'deal_count', 'amount_fmt']]
-    summary_df.columns = ['Stage', 'Deal Count', f'{amount_title} (SEK)']
-    print(summary_df)
+    )    
+    return fig
 
 def plot_invoice_amounts(df, start_date=None, end_date=None, amount_type='net', hue=False):
     """
@@ -300,39 +291,8 @@ def plot_invoice_amounts(df, start_date=None, end_date=None, amount_type='net', 
         width=900,
         xaxis={'categoryorder': 'category ascending'}
     )
-    fig.show()
-    
-    # display summary stats
-    if hue:
-        # if hue is passed
-        broker_summary = monthly_data.groupby('broker')[amount_col].agg(['sum', 'mean']).reset_index()
-        broker_summary.columns = ['Broker', 'Total Amount', 'Average Monthly Amount']
-        broker_summary['Total Amount'] = broker_summary['Total Amount'].map(lambda x: f"{x:,.2f} SEK")
-        broker_summary['Average Monthly Amount'] = broker_summary['Average Monthly Amount'].map(lambda x: f"{x:,.2f} SEK")
-        
-        print(f"\nSummary Statistics for {amount_title}{date_range_text} by Broker:")
-        print(broker_summary)
-    
-        total_amount = monthly_data[amount_col].sum()
-        unique_months = monthly_data['month_str'].nunique()
-        avg_monthly = total_amount / unique_months if unique_months > 0 else 0
-        
-        print(f"\nOverall Statistics:")
-        print(f"Total Amount: {total_amount:,.2f} SEK")
-        print(f"Average Monthly Amount: {avg_monthly:,.2f} SEK")
-        print(f"Number of Months: {unique_months}")
-    else:
-        # if hue is not passed
-        total_amount = monthly_data[amount_col].sum()
-        avg_monthly = monthly_data[amount_col].mean()
-        
-        print(f"\nSummary Statistics for {amount_title}{date_range_text}:")
-        print(f"Total Amount: {total_amount:,.2f} SEK")
-        print(f"Average Monthly Amount: {avg_monthly:,.2f} SEK")
-        print(f"Number of Months: {len(monthly_data)}")
-    
-    # return the monthly data for potential further analysis
-    return monthly_data
+    return fig
+    #return monthly_data
 
 def get_monthly_invoice_pivot(df, start_date=None, end_date=None):
     """
