@@ -1,9 +1,5 @@
-# macOS
 .DS_Store
-
-# environment variables
 .env
 .env.*
-
-# csv
 **/*.csv
+__pycache__

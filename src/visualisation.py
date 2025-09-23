@@ -1,0 +1,571 @@
+import pandas as pd
+import os
+from pathlib import Path
+import io
+import plotly.graph_objects as go
+import plotly.express as px
+import numpy as np
+
+
+# first version only with weighted amount filter 
+def sales_funnel_viz(df, weighted_amount=True):
+    """
+    Sales funnel visualization using Plotly
+    
+    Arguments:
+    df (DataFrame): Sales pipeline dataframe
+    weighted_amount (bool): If True, use weighted_deal_amount, otherwise use deal_amount
+    
+    Returns:
+    None: Displays the plotly figure
+    """
+    # select the appropriate amount column based on the parameter
+    amount_col = 'weighted_deal_amount' if weighted_amount else 'deal_amount'
+    amount_title = 'Weighted Deal Amount' if weighted_amount else 'Deal Amount'
+    
+    # group data by pipeline stage
+    funnel_data = df.groupby(['pipeline_stage_order', 'pipeline_stage']).agg(
+        amount=(amount_col, 'sum'),
+        deal_count=('deal_id', 'count')
+    ).reset_index().sort_values('pipeline_stage_order')
+    
+    # create stage labels
+    funnel_data['stage_label'] = funnel_data.apply(
+        lambda x: f"Stage {int(x['pipeline_stage_order'])}: {x['pipeline_stage']}", axis=1
+    )
+    
+    # format amount for hover text
+    funnel_data['amount_fmt'] = funnel_data['amount'].apply(lambda x: f"{x:,.2f} SEK")
+    
+    # create hover text
+    funnel_data['hover_text'] = funnel_data.apply(
+        lambda x: f"<b>{x['stage_label']}</b><br>" +
+                 f"{amount_title}: {x['amount_fmt']}<br>" +
+                 f"Number of Deals: {x['deal_count']}", 
+        axis=1
+    )
+    
+    # create funnel chart
+    fig = go.Figure()
+    fig.add_trace(go.Funnel(
+        name='Sales Funnel',
+        y=funnel_data['stage_label'],
+        x=funnel_data['amount'],
+        textposition="inside",
+        textinfo="value+percent initial",
+        opacity=0.7,
+        marker={
+            "color": ["#1f77b4", "#7fc3e5", "#4292c6", "#2171b5", "#08519c"][:len(funnel_data)],
+            "line": {"width": [1] * len(funnel_data), "color": ["white"] * len(funnel_data)}
+        },
+        hovertext=funnel_data['hover_text'],
+        hoverinfo='text'
+    ))
+    
+    # add title and labels
+    fig.update_layout(
+        title={
+            'text': f'Sales Pipeline Funnel ({amount_title})',
+            'y': 0.95,
+            'x': 0.5,
+            'xanchor': 'center',
+            'yanchor': 'top',
+        },
+        height=500,
+        width=800
+    )
+    fig.show()
+    
+    # display a summary table
+    print(f"\nSales Funnel Summary ({amount_title}):")
+    summary_df = funnel_data[['stage_label', 'deal_count', 'amount_fmt']]
+    summary_df.columns = ['Stage', 'Deal Count', f'{amount_title} (SEK)']
+    print(summary_df)
+    
+# second version with weighted amount and time range filter 
+def sales_funnel_viz2(df, weighted_amount=True, time_filter_start=None, time_filter_stop=None):
+    """
+    Sales funnel visualization using Plotly with optional time filtering.
+    
+    Arguments:
+    df (DataFrame): Sales pipeline dataframe
+    weighted_amount (bool): If True, use weighted_deal_amount, otherwise use deal_amount
+    time_filter_start (str): Start date for filtering in format 'YYYY-MM-DD' 
+    time_filter_stop (str): End date for filtering in format 'YYYY-MM-DD' 
+    
+    Returns:
+    None: Displays the plotly figure
+    """
+    # create a copy of the dataframe to avoid modifying the original
+    filtered_df = df.copy()
+    
+    # apply time filters if provided
+    if time_filter_start or time_filter_stop:
+        # get a sample date to check timezone info
+        date_col = filtered_df['create_date']
+        
+        # alternative approach for filtering with timezone-aware dates
+        if time_filter_start:
+            # convert to datetime and localize to match dataframe timezone
+            start_date = pd.to_datetime(time_filter_start)
+            start_date_str = start_date.strftime('%Y-%m-%d')
+            # Create a mask by converting to string format first for comparison
+            filtered_df = filtered_df[filtered_df['create_date'].dt.strftime('%Y-%m-%d') >= start_date_str]
+        
+        if time_filter_stop:
+            # convert to datetime and localize to match dataframe timezone
+            end_date = pd.to_datetime(time_filter_stop)
+            end_date_str = end_date.strftime('%Y-%m-%d')
+            # Create a mask by converting to string format first for comparison
+            filtered_df = filtered_df[filtered_df['create_date'].dt.strftime('%Y-%m-%d') <= end_date_str]
+        
+        # create date range text for title
+        if time_filter_start and time_filter_stop:
+            date_range_text = f" (Created {time_filter_start} to {time_filter_stop})"
+        elif time_filter_start:
+            date_range_text = f" (Created from {time_filter_start})"
+        elif time_filter_stop:
+            date_range_text = f" (Created until {time_filter_stop})"
+    else:
+        date_range_text = ""
+    
+    # check if we have data after filtering
+    if filtered_df.empty:
+        print("No data available after applying time filters.")
+        return
+    
+    # select the appropriate amount column based on the parameter
+    amount_col = 'weighted_deal_amount' if weighted_amount else 'deal_amount'
+    amount_title = 'Weighted Deal Amount' if weighted_amount else 'Deal Amount'
+    
+    # group data by pipeline stage
+    funnel_data = filtered_df.groupby(['pipeline_stage_order', 'pipeline_stage']).agg(
+        amount=(amount_col, 'sum'),
+        deal_count=('deal_id', 'count')
+    ).reset_index().sort_values('pipeline_stage_order')
+    
+    # create stage labels
+    funnel_data['stage_label'] = funnel_data.apply(
+        lambda x: f"Stage {int(x['pipeline_stage_order'])}: {x['pipeline_stage']}", axis=1
+    )
+    
+    # format amount for hover text
+    funnel_data['amount_fmt'] = funnel_data['amount'].apply(lambda x: f"{x:,.2f} SEK")
+    
+    # create hover text
+    funnel_data['hover_text'] = funnel_data.apply(
+        lambda x: f"<b>{x['stage_label']}</b><br>" +
+                 f"{amount_title}: {x['amount_fmt']}<br>" +
+                 f"Number of Deals: {x['deal_count']}", 
+        axis=1
+    )
+    
+    # create funnel chart
+    fig = go.Figure()
+    fig.add_trace(go.Funnel(
+        name='Sales Funnel',
+        y=funnel_data['stage_label'],
+        x=funnel_data['amount'],
+        textposition="inside",
+        textinfo="value+percent initial",
+        opacity=0.7,
+        marker={
+            "color": ["#1f77b4", "#7fc3e5", "#4292c6", "#2171b5", "#08519c"][:len(funnel_data)],
+            "line": {"width": [1] * len(funnel_data), "color": ["white"] * len(funnel_data)}
+        },
+        hovertext=funnel_data['hover_text'],
+        hoverinfo='text'
+    ))
+    
+    # add title and labels
+    fig.update_layout(
+        title={
+            'text': f'Sales Pipeline Funnel ({amount_title}){date_range_text}',
+            'y': 0.95,
+            'x': 0.5,
+            'xanchor': 'center',
+            'yanchor': 'top',
+        },
+        height=500,
+        width=800
+    )
+    fig.show()
+    print(f"\nSales Funnel Summary ({amount_title}){date_range_text}:")
+    summary_df = funnel_data[['stage_label', 'deal_count', 'amount_fmt']]
+    summary_df.columns = ['Stage', 'Deal Count', f'{amount_title} (SEK)']
+    print(summary_df)
+
+def plot_invoice_amounts(df, start_date=None, end_date=None, amount_type='net', hue=False):
+    """
+    Plot invoice amounts by month based on final payment date.
+    
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        The invoice dataframe
+    start_date : str, optional
+        Start date for filtering in 'YYYY-MM-DD' format
+    end_date : str, optional
+        End date for filtering in 'YYYY-MM-DD' format
+    amount_type : str, default 'net'
+        Type of amount to plot: 'net' for invoice_amount_net or 'total' for invoice_amount_total
+    hue : bool, default False
+        If True, group and color by broker column
+        
+    Returns:
+    --------
+    None: Displays the plotly figure
+    """    
+    # create a copy and drop rows where final_pay_date is NaT 
+    plot_df = df.copy()
+    plot_df = plot_df.dropna(subset=['final_pay_date'])
+
+    # filter on date if argument is passed
+    if start_date:
+        start_date = pd.to_datetime(start_date)
+        plot_df = plot_df[plot_df['final_pay_date'] >= start_date]    
+    if end_date:
+        end_date = pd.to_datetime(end_date)
+        plot_df = plot_df[plot_df['final_pay_date'] <= end_date]
+    if plot_df.empty:
+        print("No data available after applying date filters.")
+        return
+    
+    # select the amount column based on passed argument 
+    if amount_type.lower() == 'net':
+        amount_col = 'invoice_amount_net'
+        amount_title = 'Net Invoice Amount'
+    elif amount_type.lower() == 'total':
+        amount_col = 'invoice_amount_total'
+        amount_title = 'Total Invoice Amount'
+    else:
+        raise ValueError("amount_type must be either 'net' or 'total'")
+    
+    # create month column for grouping
+    plot_df['month'] = plot_df['final_pay_date'].dt.to_period('M')
+    plot_df['month_str'] = plot_df['month'].dt.strftime('%Y-%m')
+    
+    # create date range text for title
+    if start_date and end_date:
+        date_range_text = f" ({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')})"
+    elif start_date:
+        date_range_text = f" (from {start_date.strftime('%Y-%m-%d')})"
+    elif end_date:
+        date_range_text = f" (until {end_date.strftime('%Y-%m-%d')})"
+    else:
+        date_range_text = ""
+    if hue:
+        # group by month and broker, then sum the amounts
+        monthly_data = plot_df.groupby(['month_str', 'broker'])[amount_col].sum().reset_index()
+
+        # create the plot with color by broker
+        fig = px.bar(
+            monthly_data,
+            x='month_str',
+            y=amount_col,
+            color='broker',
+            title=f'Monthly {amount_title} by Broker{date_range_text}',
+            labels={
+                'month_str': 'Month',
+                amount_col: f'{amount_title} (SEK)',
+                'broker': 'Broker'
+            },
+            barmode='group'
+        )
+        fig.update_traces(
+            hovertemplate='Month: %{x}<br>Broker: %{marker.color}<br>' + f'{amount_title}: %{{y:,.2f}} SEK'
+        )
+    else:
+        # group by month only and sum the amounts
+        monthly_data = plot_df.groupby('month_str')[amount_col].sum().reset_index()
+        fig = px.bar(
+            monthly_data,
+            x='month_str',
+            y=amount_col,
+            title=f'Monthly {amount_title}{date_range_text}',
+            labels={
+                'month_str': 'Month',
+                amount_col: f'{amount_title} (SEK)'
+            },
+            text_auto='.2s'
+        )
+        fig.update_traces(
+            hovertemplate='Month: %{x}<br>' + f'{amount_title}: %{{y:,.2f}} SEK'
+        )
+    # update plot layout
+    fig.update_layout(
+        xaxis_title='Month',
+        yaxis_title=f'{amount_title} (SEK)',
+        height=500,
+        width=900,
+        xaxis={'categoryorder': 'category ascending'}
+    )
+    fig.show()
+    
+    # display summary stats
+    if hue:
+        # if hue is passed
+        broker_summary = monthly_data.groupby('broker')[amount_col].agg(['sum', 'mean']).reset_index()
+        broker_summary.columns = ['Broker', 'Total Amount', 'Average Monthly Amount']
+        broker_summary['Total Amount'] = broker_summary['Total Amount'].map(lambda x: f"{x:,.2f} SEK")
+        broker_summary['Average Monthly Amount'] = broker_summary['Average Monthly Amount'].map(lambda x: f"{x:,.2f} SEK")
+        
+        print(f"\nSummary Statistics for {amount_title}{date_range_text} by Broker:")
+        print(broker_summary)
+    
+        total_amount = monthly_data[amount_col].sum()
+        unique_months = monthly_data['month_str'].nunique()
+        avg_monthly = total_amount / unique_months if unique_months > 0 else 0
+        
+        print(f"\nOverall Statistics:")
+        print(f"Total Amount: {total_amount:,.2f} SEK")
+        print(f"Average Monthly Amount: {avg_monthly:,.2f} SEK")
+        print(f"Number of Months: {unique_months}")
+    else:
+        # if hue is not passed
+        total_amount = monthly_data[amount_col].sum()
+        avg_monthly = monthly_data[amount_col].mean()
+        
+        print(f"\nSummary Statistics for {amount_title}{date_range_text}:")
+        print(f"Total Amount: {total_amount:,.2f} SEK")
+        print(f"Average Monthly Amount: {avg_monthly:,.2f} SEK")
+        print(f"Number of Months: {len(monthly_data)}")
+    
+    # return the monthly data for potential further analysis
+    return monthly_data
+
+def get_monthly_invoice_pivot(df, start_date=None, end_date=None):
+    """
+    Create a pivoted dataframe with monthly invoice statistics by broker type.
+    
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        The invoice dataframe
+    start_date : str, optional
+        Start date for filtering in 'YYYY-MM-DD' format
+    end_date : str, optional
+        End date for filtering in 'YYYY-MM-DD' format
+        
+    Returns:
+    --------
+    pandas DataFrame: Pivoted dataframe with months as columns and invoice metrics as rows
+    """
+    # Create a copy to avoid modifying the original
+    plot_df = df.copy()
+    
+    # Drop rows where final_pay_date is NaT
+    plot_df = plot_df.dropna(subset=['final_pay_date'])
+    
+    # Convert dates to datetime if they're not already
+    plot_df['final_pay_date'] = pd.to_datetime(plot_df['final_pay_date'])
+    
+    # Apply date filters if provided
+    if start_date:
+        start_date = pd.to_datetime(start_date)
+        plot_df = plot_df[plot_df['final_pay_date'] >= start_date]
+        
+    if end_date:
+        end_date = pd.to_datetime(end_date)
+        plot_df = plot_df[plot_df['final_pay_date'] <= end_date]
+    
+    # Check if we have data after filtering
+    if plot_df.empty:
+        print("No data available after applying date filters.")
+        return pd.DataFrame()
+    
+    # Create month column for grouping
+    plot_df['month'] = plot_df['final_pay_date'].dt.to_period('M')
+    plot_df['month_str'] = plot_df['month'].dt.strftime('%Y-%m')
+    
+    # Create a broker type column with standardized categories
+    plot_df['broker_type'] = plot_df['broker'].apply(
+        lambda x: 'Broker' if 'broker' in str(x).lower() else 
+                 ('Partner' if 'partner' in str(x).lower() else 'Direct')
+    )
+    
+    # Group by month and calculate totals
+    monthly_totals = plot_df.groupby('month_str').agg(
+        total_net=('invoice_amount_net', 'sum'),
+        total_total=('invoice_amount_total', 'sum')
+    )
+    
+    # Group by month and broker type
+    broker_data = plot_df.groupby(['month_str', 'broker_type']).agg(
+        net_amount=('invoice_amount_net', 'sum'),
+        total_amount=('invoice_amount_total', 'sum')
+    ).reset_index()
+    
+    # Calculate percentage of total net for each broker type
+    broker_data = broker_data.merge(monthly_totals, on='month_str')
+    broker_data['pct_of_net'] = (broker_data['net_amount'] / broker_data['total_net']) * 100
+    
+    # Create a list to store the rows for our pivot table
+    pivot_rows = []
+    
+    # Add total rows (independent of broker type)
+    pivot_rows.append(('Total Net Amount', plot_df.groupby('month_str')['invoice_amount_net'].sum()))
+    pivot_rows.append(('Total Invoice Amount', plot_df.groupby('month_str')['invoice_amount_total'].sum()))
+    
+    # Add rows for each broker type
+    for broker_type in ['Broker', 'Direct', 'Partner']:
+        # Filter for the current broker type
+        broker_subset = broker_data[broker_data['broker_type'] == broker_type]
+        
+        if not broker_subset.empty:
+            # Set the month_str as index for easy pivoting
+            broker_subset = broker_subset.set_index('month_str')
+            
+            # Add rows for this broker type
+            pivot_rows.append((f'{broker_type} Net Amount', broker_subset['net_amount']))
+            pivot_rows.append((f'{broker_type} Total Amount', broker_subset['total_amount']))
+            pivot_rows.append((f'{broker_type} % of Total Net', broker_subset['pct_of_net']))
+    
+    # Create the pivot table
+    result = pd.DataFrame({row_name: data for row_name, data in pivot_rows})
+    
+    # Clean up and format the DataFrame
+    result = result.fillna(0)
+    
+    # Format percentage columns
+    for col in result.index:
+        if '% of Total' in col:
+            result.loc[col] = result.loc[col].map(lambda x: f"{x:.2f}%")
+    
+    # Ensure columns are sorted chronologically
+    result = result.reindex(sorted(result.columns), axis=1)
+    
+    # Create a date range text for summary
+    if start_date and end_date:
+        date_range_text = f"Data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+    elif start_date:
+        date_range_text = f"Data from {start_date.strftime('%Y-%m-%d')}"
+    elif end_date:
+        date_range_text = f"Data until {end_date.strftime('%Y-%m-%d')}"
+    else:
+        date_range_text = "All available data"
+    
+    print(f"Monthly Invoice Statistics ({date_range_text})")
+    
+    return result.T  # Transpose so months are columns
+
+# version 2 of the above function 
+def get_invoice_pivot(df, start_date=None, end_date=None, by_month=True):
+    """
+    Create a pivoted dataframe with invoice statistics by broker type, grouped by either month or week.
+    
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        The invoice dataframe
+    start_date : str, optional
+        Start date for filtering in 'YYYY-MM-DD' format
+    end_date : str, optional
+        End date for filtering in 'YYYY-MM-DD' format
+    by_month : bool, default True
+        If True, group by month; if False, group by week
+        
+    Returns:
+    --------
+    pandas DataFrame: Pivoted dataframe with invoice metrics as rows and time periods as columns
+    """
+    # Create a copy to avoid modifying the original
+    plot_df = df.copy()
+    
+    # Drop rows where final_pay_date is NaT
+    plot_df = plot_df.dropna(subset=['final_pay_date'])
+    
+    # Convert dates to datetime if they're not already
+    plot_df['final_pay_date'] = pd.to_datetime(plot_df['final_pay_date'])
+    
+    # Apply date filters if provided
+    if start_date:
+        start_date = pd.to_datetime(start_date)
+        plot_df = plot_df[plot_df['final_pay_date'] >= start_date]
+        
+    if end_date:
+        end_date = pd.to_datetime(end_date)
+        plot_df = plot_df[plot_df['final_pay_date'] <= end_date]
+    
+    # Check if we have data after filtering
+    if plot_df.empty:
+        print("No data available after applying date filters.")
+        return pd.DataFrame()
+    
+    # Create time period column for grouping
+    if by_month:
+        plot_df['period'] = plot_df['final_pay_date'].dt.to_period('M')
+        plot_df['period_str'] = plot_df['period'].dt.strftime('%Y-%m')
+        period_type = "month"
+    else:
+        plot_df['period'] = plot_df['final_pay_date'].dt.to_period('W')
+        plot_df['period_str'] = plot_df['period'].dt.strftime('%Y-W%U')
+        period_type = "week"
+    
+    # Create a broker type column with standardized categories
+    plot_df['broker_type'] = plot_df['broker'].apply(
+        lambda x: 'Broker' if 'broker' in str(x).lower() else 
+                 ('Partner' if 'partner' in str(x).lower() else 'Direct')
+    )
+    
+    # Create an empty DataFrame for our result
+    result_data = {}
+    
+    # Get all unique periods for columns
+    all_periods = sorted(plot_df['period_str'].unique())
+    
+    # Calculate total amounts
+    total_invoiced = plot_df.groupby('period_str')['invoice_amount_total'].sum()
+    net_invoiced = plot_df.groupby('period_str')['invoice_amount_net'].sum()
+    
+    # Add totals to result
+    result_data['Total invoiced amount'] = total_invoiced
+    result_data['Net invoiced amount'] = net_invoiced
+    
+    # Calculate percentages for each broker type
+    for broker_type in ['Broker', 'Direct', 'Partner']:
+        # Filter for this broker type
+        broker_data = plot_df[plot_df['broker_type'] == broker_type]
+        
+        if not broker_data.empty:
+            # Group by period and calculate net amount
+            broker_by_period = broker_data.groupby('period_str')['invoice_amount_net'].sum()
+            
+            # Calculate percentage for each period
+            percentages = {}
+            for period in all_periods:
+                if period in broker_by_period.index and period in net_invoiced.index:
+                    if net_invoiced[period] > 0:
+                        percentages[period] = (broker_by_period.get(period, 0) / net_invoiced[period]) * 100
+                    else:
+                        percentages[period] = 0
+                else:
+                    percentages[period] = 0
+            
+            # Convert to Series and add to result
+            result_data[f'{broker_type} % of Net invoiced amount'] = pd.Series(percentages)
+    
+    # Create DataFrame from the data
+    result = pd.DataFrame(result_data)
+    
+    # Format percentage columns
+    for col in result.columns:
+        if '% of Net' in col:
+            result[col] = result[col].map(lambda x: f"{x:.2f}%")
+    
+    # Transpose so metrics are rows and time periods are columns
+    result = result.T
+    
+    # Create a date range text for summary
+    if start_date and end_date:
+        date_range_text = f"Data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+    elif start_date:
+        date_range_text = f"Data from {start_date.strftime('%Y-%m-%d')}"
+    elif end_date:
+        date_range_text = f"Data until {end_date.strftime('%Y-%m-%d')}"
+    else:
+        date_range_text = "All available data"
+    
+    print(f"Invoice Statistics by {period_type.capitalize()} ({date_range_text})")
+    
+    return result
