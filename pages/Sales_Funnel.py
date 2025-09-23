@@ -3,7 +3,7 @@ from app import sales_funnel_viz
 from app import load_process_and_cache
 
 # Get the cached data
-sales_pipeline, invoices = load_process_and_cache()
+sales_pipeline, invoices, payments = load_process_and_cache()
 
 # Create columns for side-by-side charts
 col1, col2 = st.columns(2)

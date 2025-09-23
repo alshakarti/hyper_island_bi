@@ -17,7 +17,6 @@ from src.visualisation import (
     sales_funnel_viz2,
     plot_invoice_amounts,
     get_monthly_invoice_pivot,
-    get_invoice_pivot
 )
 # customizing the page
 st.set_page_config(
@@ -37,36 +36,33 @@ def load_process_and_cache():
     print(f"df1 is from file: {file_mappings['df1']}")
 
     # creating reporting tables  
-    sales_pipeline, invoices = process_data(df1, df9, df7)
+    sales_pipeline, invoices, payments = process_data(df1, df9, df7, df8)
     
-    return sales_pipeline, invoices
+    return sales_pipeline, invoices, payments
 
-sales_pipeline, invoices = load_process_and_cache()
+sales_pipeline, invoices, payments = load_process_and_cache()
 
-# landing page for dashboard
-st.header('Key Metrics Dashboard')
-st.markdown("---")
-st.write("")
-
-st.markdown("""
-This dashboard provides insights into sales performance and invoicing trends blah blah blah add some more text here once done.              
-""")
-st.write("")    
-st.write("")
-st.write("")
-st.header('Created By')
+# dashboard items 
+st.header("Key Metric")
 st.markdown("---")
 
-# name and contact info for each team member
-team = {
-    "Muhammad": "https://www.linkedin.com/in/alshakarti",
-    "Aron": "https://www.linkedin.com",
-    "Lara": "https://www.linkedin.com",
-    "William": "https://www.linkedin.com",
-}
-cols = st.columns(5)
-for (name, contact_info), col in zip(team.items(), cols):
-    with col:
-        st.markdown(f"**{name}**")
-        st.link_button('Go to linkedin profile', contact_info)
-        st.write("")
+st.subheader("Financial")
+financial_data = get_monthly_invoice_pivot(invoices, payments, start_date=None, end_date=None)
+# Filter to include only the specified rows
+filtered_financial_data = financial_data.loc[
+    [
+        #'Total Invoice Amount',
+        'Total Net Amount',
+        'Payments',
+        'Revenue',
+        'Broker % of Total Net',
+        'Direct % of Total Net', 
+        'Partner % of Total Net'
+    ]
+]
+
+st.dataframe(
+    filtered_financial_data, 
+    use_container_width=True,
+    hide_index=False
+)

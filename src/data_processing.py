@@ -40,7 +40,7 @@ def load_all_csv_files(data_dir='data', show_rows=5):
     return dataframes, file_mappings
 
 # combine and process raw data into datasets for analysis 
-def process_data(df1,df9, df7):
+def process_data(df1, df9, df7, df8):
     
     # store datasets 
     datasets = {}
@@ -76,6 +76,13 @@ def process_data(df1,df9, df7):
     invoices = df7.drop(columns=['month_name', 'accounting_month', 'accounting_year'])
     datasets['invoices'] = invoices
     
+    # create payments dataset
+    date_columns = ['final_pay_date']
+    for col in date_columns:
+        df8[col] = pd.to_datetime(df8[col])
+    payments = df8.drop(columns=['invoice_date', 'due_date']) 
+    datasets['payments'] = payments
+    
     # print info for each dataset
     print('-'*100)
     print("DATASETS CREATED")
@@ -91,4 +98,4 @@ def process_data(df1,df9, df7):
         print('-'*100)
         
     # return datasets 
-    return sales_pipeline, invoices
+    return sales_pipeline, invoices, payments

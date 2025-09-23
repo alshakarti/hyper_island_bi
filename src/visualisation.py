@@ -292,9 +292,8 @@ def plot_invoice_amounts(df, start_date=None, end_date=None, amount_type='net', 
         xaxis={'categoryorder': 'category ascending'}
     )
     return fig
-    #return monthly_data
 
-def get_monthly_invoice_pivot(df, start_date=None, end_date=None):
+def get_monthly_invoice_pivot(df, df2, start_date=None, end_date=None):
     """
     Create a pivoted dataframe with monthly invoice statistics by broker type.
     
@@ -381,151 +380,55 @@ def get_monthly_invoice_pivot(df, start_date=None, end_date=None):
             pivot_rows.append((f'{broker_type} Total Amount', broker_subset['total_amount']))
             pivot_rows.append((f'{broker_type} % of Total Net', broker_subset['pct_of_net']))
     
+    # add Payments row from df2 
+    payments_df = df2.dropna(subset=['final_pay_date']).copy()
+    payments_df['month_str'] = payments_df['final_pay_date'].dt.strftime('%Y-%m')
+    payments_by_month = payments_df.groupby('month_str')['invoice_payment'].sum()
+    pivot_rows.append(('Payments', payments_by_month))
+
+    # -create Revenue row
+    total_net_series = plot_df.groupby('month_str')['invoice_amount_net'].sum()
+    payments_series = payments_by_month
+    # Align indexes and fill missing months with 0
+    revenue_series = total_net_series.subtract(payments_series, fill_value=0)
+    pivot_rows.append(('Revenue', revenue_series))
+
     # Create the pivot table
     result = pd.DataFrame({row_name: data for row_name, data in pivot_rows})
-    
+
     # Clean up and format the DataFrame
     result = result.fillna(0)
+
+    # Format all values to integers (no decimals)
+    result = result.applymap(lambda x: int(round(x)) if not isinstance(x, str) else x)
+
+    # Format percentage columns as strings with % and no decimals
+    percentage_rows = ['Broker % of Total Net', 'Direct % of Total Net', 'Partner % of Total Net']
+    for col in percentage_rows:
+        if col in result.columns:
+            result[col] = result[col].apply(lambda x: f"{int(round(x))}%")
     
-    # Format percentage columns
-    for col in result.index:
-        if '% of Total' in col:
-            result.loc[col] = result.loc[col].map(lambda x: f"{x:.2f}%")
-    
+        # Format other columns with thousand separator
+    for col in result.columns:
+        if col not in percentage_rows:
+            result[col] = result[col].apply(lambda x: f"{x:,}" if isinstance(x, int) else x)
+
     # Ensure columns are sorted chronologically
     result = result.reindex(sorted(result.columns), axis=1)
-    
-    # Create a date range text for summary
-    if start_date and end_date:
-        date_range_text = f"Data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
-    elif start_date:
-        date_range_text = f"Data from {start_date.strftime('%Y-%m-%d')}"
-    elif end_date:
-        date_range_text = f"Data until {end_date.strftime('%Y-%m-%d')}"
-    else:
-        date_range_text = "All available data"
-    
-    print(f"Monthly Invoice Statistics ({date_range_text})")
-    
-    return result.T  # Transpose so months are columns
 
-# version 2 of the above function 
-def get_invoice_pivot(df, start_date=None, end_date=None, by_month=True):
-    """
-    Create a pivoted dataframe with invoice statistics by broker type, grouped by either month or week.
-    
-    Parameters:
-    -----------
-    df : pandas DataFrame
-        The invoice dataframe
-    start_date : str, optional
-        Start date for filtering in 'YYYY-MM-DD' format
-    end_date : str, optional
-        End date for filtering in 'YYYY-MM-DD' format
-    by_month : bool, default True
-        If True, group by month; if False, group by week
-        
-    Returns:
-    --------
-    pandas DataFrame: Pivoted dataframe with invoice metrics as rows and time periods as columns
-    """
-    # Create a copy to avoid modifying the original
-    plot_df = df.copy()
-    
-    # Drop rows where final_pay_date is NaT
-    plot_df = plot_df.dropna(subset=['final_pay_date'])
-    
-    # Convert dates to datetime if they're not already
-    plot_df['final_pay_date'] = pd.to_datetime(plot_df['final_pay_date'])
-    
-    # Apply date filters if provided
-    if start_date:
-        start_date = pd.to_datetime(start_date)
-        plot_df = plot_df[plot_df['final_pay_date'] >= start_date]
-        
-    if end_date:
-        end_date = pd.to_datetime(end_date)
-        plot_df = plot_df[plot_df['final_pay_date'] <= end_date]
-    
-    # Check if we have data after filtering
-    if plot_df.empty:
-        print("No data available after applying date filters.")
-        return pd.DataFrame()
-    
-    # Create time period column for grouping
-    if by_month:
-        plot_df['period'] = plot_df['final_pay_date'].dt.to_period('M')
-        plot_df['period_str'] = plot_df['period'].dt.strftime('%Y-%m')
-        period_type = "month"
-    else:
-        plot_df['period'] = plot_df['final_pay_date'].dt.to_period('W')
-        plot_df['period_str'] = plot_df['period'].dt.strftime('%Y-W%U')
-        period_type = "week"
-    
-    # Create a broker type column with standardized categories
-    plot_df['broker_type'] = plot_df['broker'].apply(
-        lambda x: 'Broker' if 'broker' in str(x).lower() else 
-                 ('Partner' if 'partner' in str(x).lower() else 'Direct')
-    )
-    
-    # Create an empty DataFrame for our result
-    result_data = {}
-    
-    # Get all unique periods for columns
-    all_periods = sorted(plot_df['period_str'].unique())
-    
-    # Calculate total amounts
-    total_invoiced = plot_df.groupby('period_str')['invoice_amount_total'].sum()
-    net_invoiced = plot_df.groupby('period_str')['invoice_amount_net'].sum()
-    
-    # Add totals to result
-    result_data['Total invoiced amount'] = total_invoiced
-    result_data['Net invoiced amount'] = net_invoiced
-    
-    # Calculate percentages for each broker type
-    for broker_type in ['Broker', 'Direct', 'Partner']:
-        # Filter for this broker type
-        broker_data = plot_df[plot_df['broker_type'] == broker_type]
-        
-        if not broker_data.empty:
-            # Group by period and calculate net amount
-            broker_by_period = broker_data.groupby('period_str')['invoice_amount_net'].sum()
-            
-            # Calculate percentage for each period
-            percentages = {}
-            for period in all_periods:
-                if period in broker_by_period.index and period in net_invoiced.index:
-                    if net_invoiced[period] > 0:
-                        percentages[period] = (broker_by_period.get(period, 0) / net_invoiced[period]) * 100
-                    else:
-                        percentages[period] = 0
-                else:
-                    percentages[period] = 0
-            
-            # Convert to Series and add to result
-            result_data[f'{broker_type} % of Net invoiced amount'] = pd.Series(percentages)
-    
-    # Create DataFrame from the data
-    result = pd.DataFrame(result_data)
-    
-    # Format percentage columns
-    for col in result.columns:
-        if '% of Net' in col:
-            result[col] = result[col].map(lambda x: f"{x:.2f}%")
-    
-    # Transpose so metrics are rows and time periods are columns
+    # AFTER formatting, transpose so months are columns
     result = result.T
-    
-    # Create a date range text for summary
-    if start_date and end_date:
-        date_range_text = f"Data from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
-    elif start_date:
-        date_range_text = f"Data from {start_date.strftime('%Y-%m-%d')}"
-    elif end_date:
-        date_range_text = f"Data until {end_date.strftime('%Y-%m-%d')}"
-    else:
-        date_range_text = "All available data"
-    
-    print(f"Invoice Statistics by {period_type.capitalize()} ({date_range_text})")
-    
+
+    # Format column names from YYYY-MM to MMM YYYY
+    formatted_columns = {}
+    for col in result.columns:
+        try:
+            date_obj = pd.to_datetime(col.split()[0] + '-01')
+            formatted_col = date_obj.strftime('%b %Y')
+            formatted_columns[col] = formatted_col
+        except:
+            formatted_columns[col] = col
+
+    result = result.rename(columns=formatted_columns)
+
     return result
