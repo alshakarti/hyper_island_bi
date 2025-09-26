@@ -186,7 +186,7 @@ def sales_funnel_viz2(df, weighted_amount=True, time_filter_start=None, time_fil
     )    
     return fig
 
-def get_monthly_invoice_pivot(df, df2, start_date=None, end_date=None):
+def key_metrics_monthly(df, df2, df3, start_date=None, end_date=None):
     """
     Create a pivoted dataframe with monthly invoice statistics by broker type.
     
@@ -194,6 +194,7 @@ def get_monthly_invoice_pivot(df, df2, start_date=None, end_date=None):
     -----------
     df : pandas DataFrame
         The invoice dataframe
+    
     start_date : str, optional
         Start date for filtering in 'YYYY-MM-DD' format
     end_date : str, optional
@@ -285,6 +286,25 @@ def get_monthly_invoice_pivot(df, df2, start_date=None, end_date=None):
     # Align indexes and fill missing months with 0
     revenue_series = total_net_series.subtract(payments_series, fill_value=0)
     pivot_rows.append(('Revenue', revenue_series))
+    
+    # add time reports from df3 - billable, non-billable and total hours by month 
+    if df3 is not None:
+        df3_copy = df3.copy()
+        df3_copy = df3_copy.dropna(subset=['date'])
+        df3_copy['month_str'] = pd.to_datetime(df3_copy['date']).dt.strftime('%Y-%m')
+        hours_by_month = df3_copy.groupby('month_str').agg(
+            billable_hours=('billable_hours', 'sum'),
+            non_billable_hours=('non_billable_hours', 'sum'),
+            total_hours=('total_hours', 'sum')
+        )
+        # Utilization percentage
+        hours_by_month['Utilization Percentage'] = (
+            (hours_by_month['billable_hours'] / hours_by_month['total_hours']).replace([np.inf, -np.inf], 0).fillna(0) * 100
+        )
+        pivot_rows.append(('Billable Hours', hours_by_month['billable_hours']))
+        pivot_rows.append(('Non-Billable Hours', hours_by_month['non_billable_hours']))
+        pivot_rows.append(('Total Hours', hours_by_month['total_hours']))
+        pivot_rows.append(('Utilization Percentage', hours_by_month['Utilization Percentage']))
 
     # Create the pivot table
     result = pd.DataFrame({row_name: data for row_name, data in pivot_rows})
@@ -296,10 +316,17 @@ def get_monthly_invoice_pivot(df, df2, start_date=None, end_date=None):
     result = result.applymap(lambda x: int(round(x)) if not isinstance(x, str) else x)
 
     # Format percentage columns as strings with % and no decimals
-    percentage_rows = ['Broker % of Total Net', 'Direct % of Total Net', 'Partner % of Total Net']
+#    percentage_rows = ['Broker % of Total Net', 'Direct % of Total Net', 'Partner % of Total Net']
+#    for col in percentage_rows:
+#        if col in result.columns:
+#            result[col] = result[col].apply(lambda x: f"{int(round(x))}%")
+
+    # Format percentage columns as strings with % and no decimals
+    percentage_rows = ['Broker % of Total Net', 'Direct % of Total Net', 'Partner % of Total Net', 'Utilization Percentage']
     for col in percentage_rows:
         if col in result.columns:
-            result[col] = result[col].apply(lambda x: f"{int(round(x))}%")
+            result[col] = result[col].apply(lambda x: f"{int(round(x))}%" if col == 'Utilization Percentage' else f"{int(round(x))}%")
+
     
         # Format other columns with thousand separator
     for col in result.columns:

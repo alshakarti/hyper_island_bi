@@ -40,7 +40,7 @@ def load_all_csv_files(data_dir='data', show_rows=5):
     return dataframes, file_mappings
 
 # combine and process raw data into datasets for analysis 
-def process_data(df1, df9, df7, df8):
+def process_data(df1, df9, df7, df8, df10, df11):
     
     # store datasets 
     datasets = {}
@@ -82,6 +82,41 @@ def process_data(df1, df9, df7, df8):
         df8[col] = pd.to_datetime(df8[col])
     payments = df8.drop(columns=['invoice_date', 'due_date']) 
     datasets['payments'] = payments
+
+    # create time reporting dataset
+    records = []
+
+    # iterate though df10 and add hours to master df based on is_billable flag 
+    for _, row in df10.iterrows():
+        date = pd.to_datetime(row['dt'])
+        is_billable = bool(row['billable'])
+        billable_hours = row['hours'] if is_billable else 0
+        non_billable_hours = row['hours'] if not is_billable else 0
+        total_hours = row['hours']
+        records.append({
+            'date': date,
+            'billable_hours': billable_hours,
+            'non_billable_hours': non_billable_hours,
+            'total_hours': total_hours,
+        })
+
+    # iterate though df11 and add hours to master df based on factor_value flag 
+    for _, row in df11.iterrows():
+        date = pd.to_datetime(row['activity_date'])
+        hours = row['minutes'] / 60.0
+        is_billable = row['factor_value'] == 1.0
+        billable_hours = hours if is_billable else 0
+        non_billable_hours = hours if not is_billable else 0
+        total_hours = hours
+        records.append({
+            'date': date,
+            'billable_hours': billable_hours,
+            'non_billable_hours': non_billable_hours,
+            'total_hours': total_hours,
+        })
+
+    time_reporting = pd.DataFrame(records)
+    datasets['time_reporting'] = time_reporting
     
     # print info for each dataset
     print('-'*100)
@@ -97,5 +132,5 @@ def process_data(df1, df9, df7, df8):
         print(info_output)
         print('-'*100)
         
-    # return datasets 
-    return sales_pipeline, invoices, payments
+    # return all datasets 
+    return sales_pipeline, invoices, payments, time_reporting

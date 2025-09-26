@@ -16,7 +16,7 @@ from src.visualisation import (
     sales_funnel_viz,
     sales_funnel_viz2,
     plot_invoice_amounts,
-    get_monthly_invoice_pivot,
+    key_metrics_monthly,
     highlight_revenue_trend
 )
 # customizing the page
@@ -37,18 +37,18 @@ def load_process_and_cache():
     print(f"df1 is from file: {file_mappings['df1']}")
 
     # creating reporting tables  
-    sales_pipeline, invoices, payments = process_data(df1, df9, df7, df8)
+    sales_pipeline, invoices, payments, time_reporting = process_data(df1, df9, df7, df8, df10, df11)
     
-    return sales_pipeline, invoices, payments
+    return sales_pipeline, invoices, payments, time_reporting
 
-sales_pipeline, invoices, payments = load_process_and_cache()
+sales_pipeline, invoices, payments, time_reporting = load_process_and_cache()
 
 # dashboard items 
 st.header("Key Metric")
 st.markdown("---")
 
 st.subheader("Financial")
-financial_data = get_monthly_invoice_pivot(invoices, payments, start_date=None, end_date=None)
+financial_data = key_metrics_monthly(invoices, payments, time_reporting, start_date=None, end_date=None)
 # Filter to include only the specified rows
 filtered_financial_data = financial_data.loc[
     [
@@ -58,7 +58,12 @@ filtered_financial_data = financial_data.loc[
         'Revenue',
         'Broker % of Total Net',
         'Direct % of Total Net', 
-        'Partner % of Total Net'
+        'Partner % of Total Net',
+        'Billable Hours',
+        'Non-Billable Hours',
+        'Total Hours',
+        'Utilization Percentage'
+        
     ]
 ]
 
