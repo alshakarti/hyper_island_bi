@@ -17,6 +17,7 @@ from src.visualisation import (
     sales_funnel_viz2,
     plot_invoice_amounts,
     get_monthly_invoice_pivot,
+    highlight_revenue_trend
 )
 # customizing the page
 st.set_page_config(
@@ -61,8 +62,32 @@ filtered_financial_data = financial_data.loc[
     ]
 ]
 
+styled_financial_data = filtered_financial_data.style.apply(highlight_revenue_trend, axis=1)
 st.dataframe(
-    filtered_financial_data, 
+    styled_financial_data,
     use_container_width=True,
     hide_index=False
 )
+
+# test chart - filters have to be moved to sidebar and linked to the chart function though variable/argument 
+st.subheader("Monthly Trends")
+
+amount_type = st.selectbox(
+    "Select Amount Type",
+    options=['net', 'total', 'payments', 'revenue'],
+    index=0
+)
+
+fig = plot_invoice_amounts(
+    invoices,
+    payments,
+    amount_type='net',
+    hue=True
+)
+
+if fig:
+    st.plotly_chart(fig, use_container_width=True)
+    
+    
+# revenue and net invoice trends: color text based on positive or negative trend
+# utilization goal: 80% of hours should be billed for

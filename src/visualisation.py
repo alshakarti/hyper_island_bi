@@ -186,113 +186,6 @@ def sales_funnel_viz2(df, weighted_amount=True, time_filter_start=None, time_fil
     )    
     return fig
 
-def plot_invoice_amounts(df, start_date=None, end_date=None, amount_type='net', hue=False):
-    """
-    Plot invoice amounts by month based on final payment date.
-    
-    Parameters:
-    -----------
-    df : pandas DataFrame
-        The invoice dataframe
-    start_date : str, optional
-        Start date for filtering in 'YYYY-MM-DD' format
-    end_date : str, optional
-        End date for filtering in 'YYYY-MM-DD' format
-    amount_type : str, default 'net'
-        Type of amount to plot: 'net' for invoice_amount_net or 'total' for invoice_amount_total
-    hue : bool, default False
-        If True, group and color by broker column
-        
-    Returns:
-    --------
-    None: Displays the plotly figure
-    """    
-    # create a copy and drop rows where final_pay_date is NaT 
-    plot_df = df.copy()
-    plot_df = plot_df.dropna(subset=['final_pay_date'])
-
-    # filter on date if argument is passed
-    if start_date:
-        start_date = pd.to_datetime(start_date)
-        plot_df = plot_df[plot_df['final_pay_date'] >= start_date]    
-    if end_date:
-        end_date = pd.to_datetime(end_date)
-        plot_df = plot_df[plot_df['final_pay_date'] <= end_date]
-    if plot_df.empty:
-        print("No data available after applying date filters.")
-        return
-    
-    # select the amount column based on passed argument 
-    if amount_type.lower() == 'net':
-        amount_col = 'invoice_amount_net'
-        amount_title = 'Net Invoice Amount'
-    elif amount_type.lower() == 'total':
-        amount_col = 'invoice_amount_total'
-        amount_title = 'Total Invoice Amount'
-    else:
-        raise ValueError("amount_type must be either 'net' or 'total'")
-    
-    # create month column for grouping
-    plot_df['month'] = plot_df['final_pay_date'].dt.to_period('M')
-    plot_df['month_str'] = plot_df['month'].dt.strftime('%Y-%m')
-    
-    # create date range text for title
-    if start_date and end_date:
-        date_range_text = f" ({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')})"
-    elif start_date:
-        date_range_text = f" (from {start_date.strftime('%Y-%m-%d')})"
-    elif end_date:
-        date_range_text = f" (until {end_date.strftime('%Y-%m-%d')})"
-    else:
-        date_range_text = ""
-    if hue:
-        # group by month and broker, then sum the amounts
-        monthly_data = plot_df.groupby(['month_str', 'broker'])[amount_col].sum().reset_index()
-
-        # create the plot with color by broker
-        fig = px.bar(
-            monthly_data,
-            x='month_str',
-            y=amount_col,
-            color='broker',
-            title=f'Monthly {amount_title} by Broker{date_range_text}',
-            labels={
-                'month_str': 'Month',
-                amount_col: f'{amount_title} (SEK)',
-                'broker': 'Broker'
-            },
-            barmode='group'
-        )
-        fig.update_traces(
-            hovertemplate='Month: %{x}<br>Broker: %{marker.color}<br>' + f'{amount_title}: %{{y:,.2f}} SEK'
-        )
-    else:
-        # group by month only and sum the amounts
-        monthly_data = plot_df.groupby('month_str')[amount_col].sum().reset_index()
-        fig = px.bar(
-            monthly_data,
-            x='month_str',
-            y=amount_col,
-            title=f'Monthly {amount_title}{date_range_text}',
-            labels={
-                'month_str': 'Month',
-                amount_col: f'{amount_title} (SEK)'
-            },
-            text_auto='.2s'
-        )
-        fig.update_traces(
-            hovertemplate='Month: %{x}<br>' + f'{amount_title}: %{{y:,.2f}} SEK'
-        )
-    # update plot layout
-    fig.update_layout(
-        xaxis_title='Month',
-        yaxis_title=f'{amount_title} (SEK)',
-        height=500,
-        width=900,
-        xaxis={'categoryorder': 'category ascending'}
-    )
-    return fig
-
 def get_monthly_invoice_pivot(df, df2, start_date=None, end_date=None):
     """
     Create a pivoted dataframe with monthly invoice statistics by broker type.
@@ -386,7 +279,7 @@ def get_monthly_invoice_pivot(df, df2, start_date=None, end_date=None):
     payments_by_month = payments_df.groupby('month_str')['invoice_payment'].sum()
     pivot_rows.append(('Payments', payments_by_month))
 
-    # -create Revenue row
+    # - create Revenue row
     total_net_series = plot_df.groupby('month_str')['invoice_amount_net'].sum()
     payments_series = payments_by_month
     # Align indexes and fill missing months with 0
@@ -432,3 +325,157 @@ def get_monthly_invoice_pivot(df, df2, start_date=None, end_date=None):
     result = result.rename(columns=formatted_columns)
 
     return result
+
+def plot_invoice_amounts(df, df2=None, start_date=None, end_date=None, amount_type='net', hue=False):
+    """
+    Plot invoice amounts by month based on final payment date.
+    Supports plotting net, total, payments, or revenue.
+
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        The invoice dataframe
+    df2 : pandas DataFrame, optional
+        The payments dataframe (required for payments/revenue)
+    start_date : str, optional
+        Start date for filtering in 'YYYY-MM-DD' format
+    end_date : str, optional
+        End date for filtering in 'YYYY-MM-DD' format
+    amount_type : str, default 'net'
+        Type of amount to plot: 'net', 'total', 'payments', or 'revenue'
+    hue : bool, default False
+        If True, group and color by broker column
+
+    Returns:
+    --------
+    None: Displays the plotly figure
+    """
+    plot_df = df.copy()
+    plot_df = plot_df.dropna(subset=['final_pay_date'])
+
+    if start_date:
+        start_date = pd.to_datetime(start_date)
+        plot_df = plot_df[plot_df['final_pay_date'] >= start_date]
+    if end_date:
+        end_date = pd.to_datetime(end_date)
+        plot_df = plot_df[plot_df['final_pay_date'] <= end_date]
+    if plot_df.empty:
+        print("No data available after applying date filters.")
+        return
+
+    plot_df['month'] = plot_df['final_pay_date'].dt.to_period('M')
+    plot_df['month_str'] = plot_df['month'].dt.strftime('%Y-%m')
+
+    # Prepare payments and revenue if needed
+    payments_by_month = None
+    revenue_by_month = None
+    if amount_type.lower() in ['payments', 'revenue']:
+        if df2 is None:
+            raise ValueError("df2 (payments dataframe) must be provided for payments or revenue plots.")
+        payments_df = df2.dropna(subset=['final_pay_date']).copy()
+        payments_df['month_str'] = payments_df['final_pay_date'].dt.strftime('%Y-%m')
+        payments_by_month = payments_df.groupby('month_str')['invoice_payment'].sum()
+        total_net_series = plot_df.groupby('month_str')['invoice_amount_net'].sum()
+        revenue_by_month = total_net_series.subtract(payments_by_month, fill_value=0)
+
+    # Select the amount column and title
+    if amount_type.lower() == 'net':
+        amount_col = 'invoice_amount_net'
+        amount_title = 'Net Invoice Amount'
+        monthly_data = plot_df.groupby('month_str')[amount_col].sum().reset_index()
+    elif amount_type.lower() == 'total':
+        amount_col = 'invoice_amount_total'
+        amount_title = 'Total Invoice Amount'
+        monthly_data = plot_df.groupby('month_str')[amount_col].sum().reset_index()
+    elif amount_type.lower() == 'payments':
+        amount_title = 'Payments'
+        monthly_data = payments_by_month.reset_index()
+        monthly_data.columns = ['month_str', 'Payments']
+    elif amount_type.lower() == 'revenue':
+        amount_title = 'Revenue'
+        monthly_data = revenue_by_month.reset_index()
+        monthly_data.columns = ['month_str', 'Revenue']
+    else:
+        raise ValueError("amount_type must be 'net', 'total', 'payments', or 'revenue'")
+
+    # Date range text for title
+    if start_date and end_date:
+        date_range_text = f" ({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')})"
+    elif start_date:
+        date_range_text = f" (from {start_date.strftime('%Y-%m-%d')})"
+    elif end_date:
+        date_range_text = f" (until {end_date.strftime('%Y-%m-%d')})"
+    else:
+        date_range_text = ""
+
+    # Plot
+    if hue and amount_type.lower() in ['net', 'total']:
+        monthly_data = plot_df.groupby(['month_str', 'broker'])[amount_col].sum().reset_index()
+        fig = px.bar(
+            monthly_data,
+            x='month_str',
+            y=amount_col,
+            color='broker',
+            title=f'Monthly {amount_title} by Broker{date_range_text}',
+            labels={
+                'month_str': 'Month',
+                amount_col: f'{amount_title} (SEK)',
+                'broker': 'Broker'
+            },
+            barmode='group'
+        )
+        fig.update_traces(
+            hovertemplate='Month: %{x}<br>Broker: %{marker.color}<br>' + f'{amount_title}: %{{y:,.2f}} SEK'
+        )
+    else:
+        y_col = monthly_data.columns[1]
+        fig = px.bar(
+            monthly_data,
+            x='month_str',
+            y=y_col,
+            title=f'Monthly {amount_title}{date_range_text}',
+            labels={
+                'month_str': 'Month',
+                y_col: f'{amount_title} (SEK)'
+            },
+            text_auto='.2s'
+        )
+        fig.update_traces(
+            hovertemplate='Month: %{x}<br>' + f'{amount_title}: %{{y:,.2f}} SEK'
+        )
+
+    fig.update_layout(
+        xaxis_title='Month',
+        yaxis_title=f'{amount_title} (SEK)',
+        height=500,
+        width=900,
+        xaxis={'categoryorder': 'category ascending'}
+    )
+    return fig
+
+def highlight_revenue_trend(row):
+    
+    target_rows = [
+    'Total Net Amount',
+    'Payments',
+    'Revenue'
+    ]
+    if row.name not in target_rows:
+        return [''] * len(row)
+    # convert values to int (remove commas and % if present)
+    values = []
+    for v in row:
+        try:
+            values.append(int(str(v).replace(',', '').replace('%', '')))
+        except Exception:
+            values.append(0)
+    # compare each month to previous (first column has no previous month)
+    styles = ['']
+    for i in range(1, len(values)):
+        if values[i] > values[i-1]:
+            styles.append('color: green; font-weight: bold;')
+        elif values[i] < values[i-1]:
+            styles.append('color: red; font-weight: bold;')
+        else:
+            styles.append('')
+    return styles
