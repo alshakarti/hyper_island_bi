@@ -408,7 +408,7 @@ def highlight_revenue_trend(row, color=True):
     return styles
 
 # plot net, total, payments or revenue by month with optional broker hue
-def plot_invoice_amounts(df, df2=None, start_date=None, end_date=None, amount_type='net', hue=False):
+def plot_invoice_amounts(df, df2=None, start_date=None, end_date=None, amount_type='net', hue=False, show_trend=False):
     """
     Plot invoice amounts by month based on final payment date.
     Supports plotting net, total, payments, or revenue.
@@ -545,6 +545,42 @@ def plot_invoice_amounts(df, df2=None, start_date=None, end_date=None, amount_ty
             hovertemplate='Month: %{x}<br>' + f'{amount_title}: %{{y:,.2f}} SEK'
         )
 
+    # multiple regression lines for when hue is true
+    if show_trend and len(monthly_data) > 1:
+        if hue and amount_type.lower() in ['net', 'total']:
+            for broker in monthly_data['broker'].unique():
+                broker_data = monthly_data[monthly_data['broker'] == broker].copy()
+                if len(broker_data) > 1:
+                    broker_data = broker_data.sort_values('month_str')
+                    broker_data['x_numeric'] = range(len(broker_data))
+                    coeffs = np.polyfit(broker_data['x_numeric'], broker_data[amount_col], 1)
+                    trend = np.polyval(coeffs, broker_data['x_numeric'])
+                    fig.add_traces(
+                        go.Scatter(
+                            x=broker_data['month_str'],
+                            y=trend,
+                            mode='lines',
+                            name=f'{broker} Trend',
+                            line=dict(dash='dash'),
+                            showlegend=True
+                        )
+                    )
+        # single regression line for when hue is false
+        elif not hue:
+            y_col = monthly_data.columns[1]
+            monthly_data['x_numeric'] = range(len(monthly_data))
+            coeffs = np.polyfit(monthly_data['x_numeric'], monthly_data[y_col], 1)
+            trend = np.polyval(coeffs, monthly_data['x_numeric'])
+            fig.add_traces(
+                go.Scatter(
+                    x=monthly_data['month_str'],
+                    y=trend,
+                    mode='lines',
+                    name='Trend',
+                    line=dict(color='red', dash='dash')
+                )
+            )
+    
     fig.update_layout(
         xaxis_title='Month',
         yaxis_title=f'{amount_title} (SEK)',
@@ -555,9 +591,9 @@ def plot_invoice_amounts(df, df2=None, start_date=None, end_date=None, amount_ty
     return fig
 
 # total, billable and non billable hours
-def plot_monthly_hours(df_time, start_date=None, end_date=None, hours_type='total'):
+def plot_monthly_hours(df_time, start_date=None, end_date=None, hours_type='total', show_trend=False):
     """
-    Aggregate and plot monthly billable, non-billable, or total hours.
+    Aggregate and plot monthly billable, non-billable, or total hours, with optional regression line.
 
     Parameters:
     -----------
@@ -569,6 +605,8 @@ def plot_monthly_hours(df_time, start_date=None, end_date=None, hours_type='tota
         End date for filtering in 'YYYY-MM-DD' format
     hours_type : str, default 'total'
         Which hours to plot: 'billable', 'non_billable', or 'total'
+    show_trend : bool, default False
+        Whether to show a regression (trend) line
 
     Returns:
     --------
@@ -607,6 +645,24 @@ def plot_monthly_hours(df_time, start_date=None, end_date=None, hours_type='tota
     fig.update_traces(
         hovertemplate='Month: %{x}<br>' + f'{hours_title}: %{{y:,.2f}}'
     )
+
+    # add regression line
+    if show_trend and len(monthly) > 1:
+        # Numeric x for regression
+        monthly['x_numeric'] = range(len(monthly))
+        # Fit a linear regression
+        coeffs = np.polyfit(monthly['x_numeric'], monthly[col], 1)
+        trend = np.polyval(coeffs, monthly['x_numeric'])
+        fig.add_traces(
+            go.Scatter(
+                x=monthly['month_str'],
+                y=trend,
+                mode='lines',
+                name='Trend',
+                line=dict(color='red', dash='dash')
+            )
+        )
+
     fig.update_layout(
         xaxis_title='Month',
         yaxis_title=hours_title,

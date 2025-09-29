@@ -13,7 +13,7 @@ from src.visualization import (
     plot_invoice_amounts,
     key_metrics_monthly,
     highlight_revenue_trend,
-    plot_monthly_hours
+    plot_monthly_hours,
 )
 # customizing the page
 st.set_page_config(
@@ -105,7 +105,7 @@ end_date_obj = get_month_end_date(end_date_obj)
 end_date_str = end_date_obj.strftime('%Y-%m-%d')
 
 # table filters
-st.sidebar.header("KPI filters")
+st.sidebar.header("Key Metrics filters")
 
 trend_color = st.sidebar.selectbox(
     "Highlight MoM Trend",
@@ -143,6 +143,14 @@ if amount_type == 'net':
 else: 
     show_broker_bool = False
 
+financial_trend_line = st.sidebar.selectbox(
+    "Show regression line",
+    options=["Yes", "No"],
+    index=1,
+    help="Show regression line for financial trend"
+)
+financial_trend_line_bool = (financial_trend_line == "Yes")
+
 # hourly filters
 st.sidebar.header("Hourly trend filters")
 
@@ -153,8 +161,16 @@ hours_type = st.sidebar.selectbox(
     help="Select hour type"
 )
 
+hourly_trend_line = st.sidebar.selectbox(
+    "Show regression line",
+    options=["Yes", "No"],
+    index=1,
+    help="Show regression line for hours trend"
+)
+hourly_trend_line_bool = (hourly_trend_line == "Yes")
+
 # dashboard table 
-st.subheader("Key Metrics Monthly")
+st.subheader("Key Metrics")
 st.markdown("---")
 st.caption(f"Showing KPIs from {selected_start_month} to {selected_end_month}")
 financial_data = key_metrics_monthly(invoices, payments, time_reporting, start_date=start_date_str, end_date=end_date_str)
@@ -207,7 +223,8 @@ fig = plot_invoice_amounts(
     start_date=start_date_str,  
     end_date=end_date_str,     
     amount_type=amount_type,
-    hue=show_broker_bool
+    hue=show_broker_bool,
+    show_trend=financial_trend_line_bool
 )
 if fig:
     st.plotly_chart(fig, use_container_width=True)
@@ -221,7 +238,8 @@ fig_hours = plot_monthly_hours(
     time_reporting,
     start_date=start_date_str,
     end_date=end_date_str,
-    hours_type=hours_type 
+    hours_type=hours_type,
+    show_trend=hourly_trend_line_bool  
 )
 if fig_hours:
     st.plotly_chart(fig_hours, use_container_width=True)
