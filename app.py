@@ -9,10 +9,11 @@ from src.data_processing import (
     get_month_end_date,
     get_month_options
 )
-from src.visualisation import (
+from src.visualization import (
     plot_invoice_amounts,
     key_metrics_monthly,
-    highlight_revenue_trend
+    highlight_revenue_trend,
+    plot_monthly_hours
 )
 # customizing the page
 st.set_page_config(
@@ -39,7 +40,7 @@ def load_process_and_cache():
 sales_pipeline, invoices, payments, time_reporting, start_date, end_date = load_process_and_cache()
 
 # global date filter 
-st.sidebar.header("Date Filters")
+st.sidebar.header("Date filter")
 
 # calculate most recent 12 months as default
 default_end = get_month_end_date(end_date)
@@ -104,60 +105,88 @@ end_date_obj = get_month_end_date(end_date_obj)
 end_date_str = end_date_obj.strftime('%Y-%m-%d')
 
 # table filters
-st.sidebar.header("Table Filters")
+st.sidebar.header("KPI filters")
 
 trend_color = st.sidebar.selectbox(
     "Highlight MoM Trend",
     options=["Yes", "No"],
     index=0,
-    help="Show green/red color for positive/negative trends"
+    help="Show green color for MoM increase and red color for MoM decrease"
 )
 trend_color_bool = (trend_color == "Yes")
 
+table_rows = st.sidebar.selectbox(
+    "Show all monthly KPIs",
+    options=["Yes", "No"],
+    index=1,
+    help="Show all available KPIs"
+)
+table_rows_bool = (table_rows == "Yes")
+
 # graf filters
-st.sidebar.header("Graph Filters") 
-    
+st.sidebar.header("Financial trends filters") 
+
 amount_type = st.sidebar.selectbox(
     "Select Amount Type",
     options=['net', 'payments', 'revenue'],
-    index=0
-)
-show_broker = st.sidebar.selectbox(
-    "Amount breakdown by broker",
-    options=['Yes', 'No'],
     index=0,
-    help="Show separate bars for each broker type"
+    help="Select amount type"
 )
-show_broker_bool = (show_broker == 'Yes')
+if amount_type == 'net':
+    show_broker = st.sidebar.selectbox(
+        "Amount breakdown by broker",
+        options=['No', 'Yes'],
+        index=0,
+        help="Show separate bars for each broker type"
+    )
+    show_broker_bool = (show_broker == 'Yes')
+else: 
+    show_broker_bool = False
 
-# dashboard items 
-st.header("Key Metric")
+# hourly filters
+st.sidebar.header("Hourly trend filters")
+
+hours_type = st.sidebar.selectbox(
+    "Select Hours Type",
+    options=['billable', 'non billable', 'total'],
+    index=0,
+    help="Select hour type"
+)
+
+# dashboard table 
+st.subheader("Key Metrics Monthly")
 st.markdown("---")
-
-st.subheader("Financial")
-st.caption(f"Showing data from {selected_start_month} to {selected_end_month}")
+st.caption(f"Showing KPIs from {selected_start_month} to {selected_end_month}")
 financial_data = key_metrics_monthly(invoices, payments, time_reporting, start_date=start_date_str, end_date=end_date_str)
 
-# Define all potential rows we want to display
-desired_rows = [
+if table_rows_bool:
+    # Define all potential rows we want to display
+    desired_rows = [
+        'Total Net Amount',
+        'Payments',
+        'Revenue',
+        'Broker % of Total Net',
+        'Direct % of Total Net', 
+        'Partner % of Total Net',
+        'Billable Hours',
+        'Non-Billable Hours',
+        'Total Hours',
+        'Utilization Percentage'
+    ]
+else:
+    desired_rows = [
     'Total Net Amount',
     'Payments',
     'Revenue',
-    'Broker % of Total Net',
     'Direct % of Total Net', 
-    'Partner % of Total Net',
-    'Billable Hours',
-    'Non-Billable Hours',
     'Total Hours',
     'Utilization Percentage'
 ]
 
-# Filter to include only the rows that actually exist in the data
+# filter to include only the rows that actually exist in the data
 filtered_financial_data = financial_data.loc[
     [row for row in desired_rows if row in financial_data.index]
 ]
-
-# ...existing code...
 styled_financial_data = filtered_financial_data.style.apply(
     lambda row: highlight_revenue_trend(row, color=trend_color_bool), axis=1
 )
@@ -167,9 +196,11 @@ st.dataframe(
     hide_index=False
 )
 
-# Connect date filters to the chart
-st.subheader("Monthly Trends")
-st.caption(f"Showing data from {selected_start_month} to {selected_end_month}")
+# dashboard net, revenue and payment graf
+st.subheader("Financial trends")
+st.markdown("---")
+st.caption(f"Showing {amount_type} amount from {selected_start_month} to {selected_end_month}")
+
 fig = plot_invoice_amounts(
     invoices,
     payments,
@@ -178,6 +209,19 @@ fig = plot_invoice_amounts(
     amount_type=amount_type,
     hue=show_broker_bool
 )
-
 if fig:
     st.plotly_chart(fig, use_container_width=True)
+
+# dashboard billable hours, non billable hours and total hours
+st.subheader("Hourly trends")
+st.markdown("---")
+st.caption(f"Showing {hours_type} hours from {selected_start_month} to {selected_end_month}")
+      
+fig_hours = plot_monthly_hours(
+    time_reporting,
+    start_date=start_date_str,
+    end_date=end_date_str,
+    hours_type=hours_type 
+)
+if fig_hours:
+    st.plotly_chart(fig_hours, use_container_width=True)

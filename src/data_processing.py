@@ -132,6 +132,7 @@ def process_data(df1, df9, df7, df8, df10, df11):
     # return all datasets 
     return sales_pipeline, invoices, payments, time_reporting
 
+# get max and min dates from invoices and payments dataframes where we have data from all tables
 def get_common_date_range(df, df2, df3):
     """
     Identify the common date range where all dataframes have data.
@@ -150,7 +151,7 @@ def get_common_date_range(df, df2, df3):
     tuple: (start_date, end_date) as datetime objects or strings in 'YYYY-MM-DD' format
            Returns (None, None) if there's no common period with data
     """
-    # Get date range for invoice data
+    # get date range for invoice data
     invoice_df = df.copy()
     invoice_df = invoice_df.dropna(subset=['final_pay_date'])
     if invoice_df.empty:
@@ -158,7 +159,7 @@ def get_common_date_range(df, df2, df3):
     
     invoice_dates = invoice_df['final_pay_date'].dt.to_period('M').unique()
     
-    # Get date range for payments data
+    # get date range for payments data
     payment_df = df2.copy()
     payment_df = payment_df.dropna(subset=['final_pay_date'])
     if payment_df.empty:
@@ -166,10 +167,10 @@ def get_common_date_range(df, df2, df3):
     
     payment_dates = payment_df['final_pay_date'].dt.to_period('M').unique()
     
-    # Get common months between invoices and payments
+    # get common months between invoices and payments
     common_dates = set(invoice_dates).intersection(set(payment_dates))
     
-    # If df3 (time reports) is provided, include it in the common dates
+    # if df3 (time reports) is provided, include it in the common dates
     if df3 is not None:
         time_df = df3.copy()
         time_df = time_df.dropna(subset=['date'])
@@ -182,21 +183,20 @@ def get_common_date_range(df, df2, df3):
     if not common_dates:
         return None, None
     
-    # Convert to list and sort
+    # convert to list and sort
     common_dates = sorted(list(common_dates))
     
-    # Get first and last date in the common range
+    # get first and last date in the common range
     first_month = common_dates[0]
     last_month = common_dates[-1]
     
-    # Format as YYYY-MM-DD (first day of first month, last day of last month)
+    # format as YYYY-MM-DD (first day of first month, last day of last month)
     start_date = first_month.start_time
     end_date = last_month.end_time
     
     return start_date.date(), end_date.date()
 
 # Get the first day of the month for start_date and last day of the month for end_date
-# Convert dates to first/last day of their respective months
 def get_month_start_date(date):
     if date is None:
         return None
@@ -212,7 +212,7 @@ def get_month_end_date(date):
     next_month = date.replace(day=28) + pd.DateOffset(days=4)
     return (next_month - pd.DateOffset(days=next_month.day)).date()
 
-# Get list of all months between start and end date for the selectbox
+# get list of all months between start and end date for the selectbox
 def get_month_options(start_date, end_date):
     if start_date is None or end_date is None:
         return []
