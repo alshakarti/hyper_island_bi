@@ -1,7 +1,4 @@
 import pandas as pd
-import os
-from pathlib import Path
-import io
 import plotly.graph_objects as go
 import plotly.express as px
 import numpy as np
@@ -186,6 +183,7 @@ def sales_funnel_viz2(df, weighted_amount=True, time_filter_start=None, time_fil
     )    
     return fig
 
+
 def key_metrics_monthly(df, df2, df3, start_date=None, end_date=None):
     """
     Create a pivoted dataframe with monthly invoice statistics by broker type.
@@ -194,7 +192,10 @@ def key_metrics_monthly(df, df2, df3, start_date=None, end_date=None):
     -----------
     df : pandas DataFrame
         The invoice dataframe
-    
+    df2 : pandas DataFrame
+        The payments dataframe
+    df3 : pandas DataFrame
+        The time reporting dataframe
     start_date : str, optional
         Start date for filtering in 'YYYY-MM-DD' format
     end_date : str, optional
@@ -204,27 +205,35 @@ def key_metrics_monthly(df, df2, df3, start_date=None, end_date=None):
     --------
     pandas DataFrame: Pivoted dataframe with months as columns and invoice metrics as rows
     """
-    # Create a copy to avoid modifying the original
+    # Create copies to avoid modifying the originals
     plot_df = df.copy()
-    
-    # Drop rows where final_pay_date is NaT
-    plot_df = plot_df.dropna(subset=['final_pay_date'])
+    payments_df = df2.copy()
     
     # Convert dates to datetime if they're not already
     plot_df['final_pay_date'] = pd.to_datetime(plot_df['final_pay_date'])
+    payments_df['final_pay_date'] = pd.to_datetime(payments_df['final_pay_date'])
     
-    # Apply date filters if provided
-    if start_date:
-        start_date = pd.to_datetime(start_date)
-        plot_df = plot_df[plot_df['final_pay_date'] >= start_date]
-        
-    if end_date:
-        end_date = pd.to_datetime(end_date)
-        plot_df = plot_df[plot_df['final_pay_date'] <= end_date]
+    # Parse date filters once
+    start_date_dt = pd.to_datetime(start_date) if start_date else None
+    end_date_dt = pd.to_datetime(end_date) if end_date else None
+    
+    # Apply date filters to invoices
+    plot_df = plot_df.dropna(subset=['final_pay_date'])
+    if start_date_dt:
+        plot_df = plot_df[plot_df['final_pay_date'] >= start_date_dt]
+    if end_date_dt:
+        plot_df = plot_df[plot_df['final_pay_date'] <= end_date_dt]
+    
+    # Apply date filters to payments
+    payments_df = payments_df.dropna(subset=['final_pay_date'])
+    if start_date_dt:
+        payments_df = payments_df[payments_df['final_pay_date'] >= start_date_dt]
+    if end_date_dt:
+        payments_df = payments_df[payments_df['final_pay_date'] <= end_date_dt]
     
     # Check if we have data after filtering
     if plot_df.empty:
-        print("No data available after applying date filters.")
+        print("No invoice data available after applying date filters.")
         return pd.DataFrame()
     
     # Create month column for grouping
@@ -274,24 +283,30 @@ def key_metrics_monthly(df, df2, df3, start_date=None, end_date=None):
             pivot_rows.append((f'{broker_type} Total Amount', broker_subset['total_amount']))
             pivot_rows.append((f'{broker_type} % of Total Net', broker_subset['pct_of_net']))
     
-    # add Payments row from df2 
-    payments_df = df2.dropna(subset=['final_pay_date']).copy()
+    # add Payments row from payments_df (already filtered)
     payments_df['month_str'] = payments_df['final_pay_date'].dt.strftime('%Y-%m')
     payments_by_month = payments_df.groupby('month_str')['invoice_payment'].sum()
     pivot_rows.append(('Payments', payments_by_month))
 
-    # - create Revenue row
+    # create Revenue row
     total_net_series = plot_df.groupby('month_str')['invoice_amount_net'].sum()
-    payments_series = payments_by_month
     # Align indexes and fill missing months with 0
-    revenue_series = total_net_series.subtract(payments_series, fill_value=0)
+    revenue_series = total_net_series.subtract(payments_by_month, fill_value=0)
     pivot_rows.append(('Revenue', revenue_series))
     
-    # add time reports from df3 - billable, non-billable and total hours by month 
+    # add time reports from df3 - apply same date filter
     if df3 is not None:
         df3_copy = df3.copy()
         df3_copy = df3_copy.dropna(subset=['date'])
-        df3_copy['month_str'] = pd.to_datetime(df3_copy['date']).dt.strftime('%Y-%m')
+        
+        # Apply date filters to time reporting data
+        df3_copy['date'] = pd.to_datetime(df3_copy['date'])
+        if start_date_dt:
+            df3_copy = df3_copy[df3_copy['date'] >= start_date_dt]
+        if end_date_dt:
+            df3_copy = df3_copy[df3_copy['date'] <= end_date_dt]
+            
+        df3_copy['month_str'] = df3_copy['date'].dt.strftime('%Y-%m')
         hours_by_month = df3_copy.groupby('month_str').agg(
             billable_hours=('billable_hours', 'sum'),
             non_billable_hours=('non_billable_hours', 'sum'),
@@ -316,22 +331,15 @@ def key_metrics_monthly(df, df2, df3, start_date=None, end_date=None):
     result = result.applymap(lambda x: int(round(x)) if not isinstance(x, str) else x)
 
     # Format percentage columns as strings with % and no decimals
-#    percentage_rows = ['Broker % of Total Net', 'Direct % of Total Net', 'Partner % of Total Net']
-#    for col in percentage_rows:
-#        if col in result.columns:
-#            result[col] = result[col].apply(lambda x: f"{int(round(x))}%")
-
-    # Format percentage columns as strings with % and no decimals
     percentage_rows = ['Broker % of Total Net', 'Direct % of Total Net', 'Partner % of Total Net', 'Utilization Percentage']
-    for col in percentage_rows:
-        if col in result.columns:
-            result[col] = result[col].apply(lambda x: f"{int(round(x))}%" if col == 'Utilization Percentage' else f"{int(round(x))}%")
-
+    for row in percentage_rows:
+        if row in result.index:
+            result.loc[row] = result.loc[row].apply(lambda x: f"{int(round(x))}%")
     
-        # Format other columns with thousand separator
-    for col in result.columns:
-        if col not in percentage_rows:
-            result[col] = result[col].apply(lambda x: f"{x:,}" if isinstance(x, int) else x)
+    # Format other columns with thousand separator
+    for idx in result.index:
+        if idx not in percentage_rows:
+            result.loc[idx] = result.loc[idx].apply(lambda x: f"{x:,}" if isinstance(x, int) else x)
 
     # Ensure columns are sorted chronologically
     result = result.reindex(sorted(result.columns), axis=1)
@@ -346,12 +354,111 @@ def key_metrics_monthly(df, df2, df3, start_date=None, end_date=None):
             date_obj = pd.to_datetime(col.split()[0] + '-01')
             formatted_col = date_obj.strftime('%b %Y')
             formatted_columns[col] = formatted_col
-        except:
+        except Exception:
             formatted_columns[col] = col
 
     result = result.rename(columns=formatted_columns)
 
     return result
+
+def highlight_revenue_trend1(row):
+    target_rows = [
+        'Total Net Amount',
+        'Payments',
+        'Revenue',
+        'Broker % of Total Net',
+        'Direct % of Total Net',
+        'Partner % of Total Net',
+        'Utilization Percentage'
+    ]
+    # Format percentage rows
+    percentage_rows = [
+        'Broker % of Total Net',
+        'Direct % of Total Net',
+        'Partner % of Total Net',
+        'Utilization Percentage'
+    ]
+    if row.name in percentage_rows:
+        # Convert all values to int and add %
+        formatted = []
+        for v in row:
+            try:
+                val = float(str(v).replace('%', '').replace(',', ''))
+                formatted.append(f"{int(round(val))}%")
+            except Exception:
+                formatted.append(v)
+        row[:] = formatted
+
+    if row.name not in target_rows:
+        return [''] * len(row)
+    # convert values to int (remove commas and % if present)
+    values = []
+    for v in row:
+        try:
+            values.append(int(str(v).replace(',', '').replace('%', '')))
+        except Exception:
+            values.append(0)
+    # compare each month to previous (first column has no previous month)
+    styles = ['']
+    for i in range(1, len(values)):
+        if values[i] > values[i-1]:
+            styles.append('color: green; font-weight: bold;')
+        elif values[i] < values[i-1]:
+            styles.append('color: red; font-weight: bold;')
+        else:
+            styles.append('')
+    return styles
+
+def highlight_revenue_trend(row, color=True):
+    target_rows = [
+        'Total Net Amount',
+        'Payments',
+        'Revenue',
+        'Broker % of Total Net',
+        'Direct % of Total Net',
+        'Partner % of Total Net',
+        'Utilization Percentage'
+    ]
+    # Format percentage rows
+    percentage_rows = [
+        'Broker % of Total Net',
+        'Direct % of Total Net',
+        'Partner % of Total Net',
+        'Utilization Percentage'
+    ]
+    if row.name in percentage_rows:
+        # Convert all values to int and add %
+        formatted = []
+        for v in row:
+            try:
+                val = float(str(v).replace('%', '').replace(',', ''))
+                formatted.append(f"{int(round(val))}%")
+            except Exception:
+                formatted.append(v)
+        row[:] = formatted
+
+    if row.name not in target_rows:
+        return [''] * len(row)
+    # convert values to int (remove commas and % if present)
+    values = []
+    for v in row:
+        try:
+            values.append(int(str(v).replace(',', '').replace('%', '')))
+        except Exception:
+            values.append(0)
+    # compare each month to previous (first column has no previous month)
+    styles = ['']
+    for i in range(1, len(values)):
+        if not color:
+            styles.append('')
+        elif values[i] > values[i-1]:
+            styles.append('color: green; font-weight: bold;')
+        elif values[i] < values[i-1]:
+            styles.append('color: red; font-weight: bold;')
+        else:
+            styles.append('')
+    return styles
+
 
 def plot_invoice_amounts(df, df2=None, start_date=None, end_date=None, amount_type='net', hue=False):
     """
@@ -379,16 +486,20 @@ def plot_invoice_amounts(df, df2=None, start_date=None, end_date=None, amount_ty
     """
     plot_df = df.copy()
     plot_df = plot_df.dropna(subset=['final_pay_date'])
+    
+    # Convert dates to datetime objects once
+    start_date_dt = pd.to_datetime(start_date) if start_date else None
+    end_date_dt = pd.to_datetime(end_date) if end_date else None
 
-    if start_date:
-        start_date = pd.to_datetime(start_date)
-        plot_df = plot_df[plot_df['final_pay_date'] >= start_date]
-    if end_date:
-        end_date = pd.to_datetime(end_date)
-        plot_df = plot_df[plot_df['final_pay_date'] <= end_date]
+    # Apply date filters to invoice data
+    if start_date_dt:
+        plot_df = plot_df[plot_df['final_pay_date'] >= start_date_dt]
+    if end_date_dt:
+        plot_df = plot_df[plot_df['final_pay_date'] <= end_date_dt]
+    
     if plot_df.empty:
-        print("No data available after applying date filters.")
-        return
+        print("No invoice data available after applying date filters.")
+        return None
 
     plot_df['month'] = plot_df['final_pay_date'].dt.to_period('M')
     plot_df['month_str'] = plot_df['month'].dt.strftime('%Y-%m')
@@ -399,11 +510,33 @@ def plot_invoice_amounts(df, df2=None, start_date=None, end_date=None, amount_ty
     if amount_type.lower() in ['payments', 'revenue']:
         if df2 is None:
             raise ValueError("df2 (payments dataframe) must be provided for payments or revenue plots.")
+        
+        # Apply the same date filters to payments data
         payments_df = df2.dropna(subset=['final_pay_date']).copy()
+        
+        # Important: Apply date filters to payments data too
+        if start_date_dt:
+            payments_df = payments_df[payments_df['final_pay_date'] >= start_date_dt]
+        if end_date_dt:
+            payments_df = payments_df[payments_df['final_pay_date'] <= end_date_dt]
+            
+        # Check if we have payments data after filtering
+        if payments_df.empty and amount_type.lower() == 'payments':
+            print("No payment data available after applying date filters.")
+            return None
+        
         payments_df['month_str'] = payments_df['final_pay_date'].dt.strftime('%Y-%m')
         payments_by_month = payments_df.groupby('month_str')['invoice_payment'].sum()
-        total_net_series = plot_df.groupby('month_str')['invoice_amount_net'].sum()
-        revenue_by_month = total_net_series.subtract(payments_by_month, fill_value=0)
+        
+        # For revenue, we need both invoices and payments
+        if amount_type.lower() == 'revenue':
+            total_net_series = plot_df.groupby('month_str')['invoice_amount_net'].sum()
+            revenue_by_month = total_net_series.subtract(payments_by_month, fill_value=0)
+            
+            # If there's no revenue data after calculation
+            if revenue_by_month.empty:
+                print("No revenue data available after calculations.")
+                return None
 
     # Select the amount column and title
     if amount_type.lower() == 'net':
@@ -425,13 +558,18 @@ def plot_invoice_amounts(df, df2=None, start_date=None, end_date=None, amount_ty
     else:
         raise ValueError("amount_type must be 'net', 'total', 'payments', or 'revenue'")
 
+    # Make sure we have data to plot
+    if monthly_data.empty:
+        print(f"No {amount_type} data available for the selected date range.")
+        return None
+
     # Date range text for title
-    if start_date and end_date:
-        date_range_text = f" ({start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')})"
-    elif start_date:
-        date_range_text = f" (from {start_date.strftime('%Y-%m-%d')})"
-    elif end_date:
-        date_range_text = f" (until {end_date.strftime('%Y-%m-%d')})"
+    if start_date_dt and end_date_dt:
+        date_range_text = f" ({start_date_dt.strftime('%Y-%m-%d')} to {end_date_dt.strftime('%Y-%m-%d')})"
+    elif start_date_dt:
+        date_range_text = f" (from {start_date_dt.strftime('%Y-%m-%d')})"
+    elif end_date_dt:
+        date_range_text = f" (until {end_date_dt.strftime('%Y-%m-%d')})"
     else:
         date_range_text = ""
 
@@ -479,30 +617,3 @@ def plot_invoice_amounts(df, df2=None, start_date=None, end_date=None, amount_ty
         xaxis={'categoryorder': 'category ascending'}
     )
     return fig
-
-def highlight_revenue_trend(row):
-    
-    target_rows = [
-    'Total Net Amount',
-    'Payments',
-    'Revenue'
-    ]
-    if row.name not in target_rows:
-        return [''] * len(row)
-    # convert values to int (remove commas and % if present)
-    values = []
-    for v in row:
-        try:
-            values.append(int(str(v).replace(',', '').replace('%', '')))
-        except Exception:
-            values.append(0)
-    # compare each month to previous (first column has no previous month)
-    styles = ['']
-    for i in range(1, len(values)):
-        if values[i] > values[i-1]:
-            styles.append('color: green; font-weight: bold;')
-        elif values[i] < values[i-1]:
-            styles.append('color: red; font-weight: bold;')
-        else:
-            styles.append('')
-    return styles
