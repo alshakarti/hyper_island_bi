@@ -2,12 +2,9 @@
 import streamlit as st
 import pandas as pd
 from src.data_processing import (
-    load_all_csv_files,
-    process_data,
-    get_common_date_range,
-    get_month_start_date,
     get_month_end_date,
-    get_month_options
+    get_month_filter_data,
+    load_process_and_store
 )
 from src.visualization import (
     plot_invoice_amounts,
@@ -23,55 +20,22 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# loading the data
-@st.cache_data   
-def load_process_and_cache(): 
-
-    dataframes, file_mappings = load_all_csv_files()
-    for name, df in dataframes.items():
-        globals()[name] = df
-    print(f"df1 is from file: {file_mappings['df1']}")
-
-    sales_pipeline, invoices, payments, time_reporting = process_data(df1, df9, df7, df8, df10, df11)
-    start_date, end_date = get_common_date_range(invoices, payments, time_reporting)
-    
-    return sales_pipeline, invoices, payments, time_reporting, start_date, end_date
-
-sales_pipeline, invoices, payments, time_reporting, start_date, end_date = load_process_and_cache()
+sales_pipeline, invoices, payments, time_reporting, start_date, end_date = load_process_and_store()
 
 # global date filter 
 st.sidebar.header("Date filter")
 
-# calculate most recent 12 months as default
-default_end = get_month_end_date(end_date)
-if default_end:
-    default_start_date = pd.Timestamp(default_end) - pd.DateOffset(months=11)
-    default_start = get_month_start_date(default_start_date)
-else:
-    default_start = get_month_start_date(start_date)
+# get datetime for filter
+month_data = get_month_filter_data(start_date, end_date)
+all_month_labels = month_data['month_labels']
+all_month_values = month_data['month_values']
+default_start_idx = month_data['default_start_idx']
+default_end_idx = month_data['default_end_idx']
 
-# get all available months in the data
-all_month_options = get_month_options(get_month_start_date(start_date), get_month_end_date(end_date))
-all_month_labels = [d.strftime('%B %Y') for d in all_month_options]
-all_month_values = [d.strftime('%Y-%m-01') for d in all_month_options]
-
-# find the default month indices (for most recent 12 months)
-if default_start and default_end and all_month_options:
-    default_start_str = default_start.strftime('%Y-%m-01')
-    default_end_str = pd.Timestamp(default_end).strftime('%Y-%m-01')
-    
-    try:
-        default_start_idx = all_month_values.index(default_start_str)
-    except ValueError:
-        default_start_idx = 0
-        
-    try:
-        default_end_idx = all_month_values.index(default_end_str)
-    except ValueError:
-        default_end_idx = len(all_month_values) - 1
-else:
-    default_start_idx = 0
-    default_end_idx = len(all_month_options) - 1 if all_month_options else 0
+# reset button - still work in progress 
+if st.sidebar.button("Reset to Default Date Range", help="Reset date filter to default range"):
+    st.session_state.start_month = all_month_labels[default_start_idx]
+    st.session_state.end_month = all_month_labels[default_end_idx]
 
 # create select boxes for start and end month
 selected_start_month = st.sidebar.selectbox(
@@ -88,6 +52,7 @@ selected_end_month = st.sidebar.selectbox(
     key="end_month", 
     help="Filter data up to this month"
 )
+
 # get indices of selected months
 start_idx = all_month_labels.index(selected_start_month)
 end_idx = all_month_labels.index(selected_end_month)

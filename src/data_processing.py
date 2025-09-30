@@ -2,6 +2,7 @@ import pandas as pd
 import os
 from pathlib import Path
 import io
+import streamlit as st
 
 def load_all_csv_files(data_dir='data', show_rows=5):
     
@@ -228,3 +229,98 @@ def get_month_options(start_date, end_date):
         current = current + pd.DateOffset(months=1)
     
     return months
+
+def get_month_filter_data(start_date, end_date, months_back=12):
+    """
+    Calculate default month ranges and create month options for date filtering.
+    
+    Parameters:
+    -----------
+    start_date : datetime or str
+        The earliest available date in the data
+    end_date : datetime or str  
+        The latest available date in the data
+    months_back : int, default 12
+        Number of months back from end_date to set as default start
+        
+    Returns:
+    --------
+    dict: Contains month options, labels, values, and default indices
+        - 'month_options': List of datetime objects for all available months
+        - 'month_labels': List of formatted month labels (e.g., 'January 2024')
+        - 'month_values': List of month values in 'YYYY-MM-01' format
+        - 'default_start_idx': Index of default start month
+        - 'default_end_idx': Index of default end month
+        - 'default_start': Default start date
+        - 'default_end': Default end date
+    """
+    # calculate most recent months_back months as default
+    default_end = get_month_end_date(end_date)
+    if default_end:
+        default_start_date = pd.Timestamp(default_end) - pd.DateOffset(months=months_back-1)
+        default_start = get_month_start_date(default_start_date)
+    else:
+        default_start = get_month_start_date(start_date)
+
+    # get all available months in the data
+    all_month_options = get_month_options(get_month_start_date(start_date), get_month_end_date(end_date))
+    all_month_labels = [d.strftime('%B %Y') for d in all_month_options]
+    all_month_values = [d.strftime('%Y-%m-01') for d in all_month_options]
+
+    # find the default month indices (for most recent months_back months)
+    if default_start and default_end and all_month_options:
+        default_start_str = default_start.strftime('%Y-%m-01')
+        default_end_str = pd.Timestamp(default_end).strftime('%Y-%m-01')
+        
+        try:
+            default_start_idx = all_month_values.index(default_start_str)
+        except ValueError:
+            default_start_idx = 0
+            
+        try:
+            default_end_idx = all_month_values.index(default_end_str)
+        except ValueError:
+            default_end_idx = len(all_month_values) - 1
+    else:
+        default_start_idx = 0
+        default_end_idx = len(all_month_options) - 1 if all_month_options else 0
+    
+    return {
+        'month_options': all_month_options,
+        'month_labels': all_month_labels,
+        'month_values': all_month_values,
+        'default_start_idx': default_start_idx,
+        'default_end_idx': default_end_idx,
+        'default_start': default_start,
+        'default_end': default_end
+    }
+    
+
+# load and process data using session state
+def load_process_and_store():
+    if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
+        dataframes, file_mappings = load_all_csv_files()
+        for name, df in dataframes.items():
+            globals()[name] = df
+        print(f"df1 is from file: {file_mappings['df1']}")
+
+        sales_pipeline, invoices, payments, time_reporting = process_data(df1, df9, df7, df8, df10, df11)
+        start_date, end_date = get_common_date_range(invoices, payments, time_reporting)
+        
+        # Store in session state
+        st.session_state.sales_pipeline = sales_pipeline
+        st.session_state.invoices = invoices
+        st.session_state.payments = payments
+        st.session_state.time_reporting = time_reporting
+        st.session_state.start_date = start_date
+        st.session_state.end_date = end_date
+        st.session_state.data_loaded = True
+    
+    return (
+        st.session_state.sales_pipeline,
+        st.session_state.invoices,
+        st.session_state.payments,
+        st.session_state.time_reporting,
+        st.session_state.start_date,
+        st.session_state.end_date
+    )
