@@ -103,14 +103,12 @@ def process_data(df1, df9, df7, df8, df10, df11):
         date = pd.to_datetime(row['activity_date'])
         hours = row['minutes'] / 60.0
         is_billable = row['factor_value'] == 1.0
-        billable_hours = hours if is_billable else 0
-        non_billable_hours = hours if not is_billable else 0
-        total_hours = hours
         records.append({
-            'date': date,
-            'billable_hours': billable_hours,
-            'non_billable_hours': non_billable_hours,
-            'total_hours': total_hours,
+        'employee_id': row['employee_id'],   # <-- keep employee id
+        'date': date,
+        'billable_hours': hours if is_billable else 0,
+        'non_billable_hours': hours if not is_billable else 0,
+        'total_hours': hours,
         })
 
     time_reporting = pd.DataFrame(records)
