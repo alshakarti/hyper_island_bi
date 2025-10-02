@@ -38,7 +38,7 @@ def load_all_csv_files(data_dir='data', show_rows=5):
     return dataframes, file_mappings
 
 # combine and process raw data into datasets for analysis 
-def process_data(df1, df9, df7, df8, df10, df11):
+def process_data(df1, df9, df7, df8, df10, df11, df4, df13):
     
     # store datasets 
     datasets = {}
@@ -114,6 +114,39 @@ def process_data(df1, df9, df7, df8, df10, df11):
     time_reporting = pd.DataFrame(records)
     datasets['time_reporting'] = time_reporting
     
+    # Left join df4 (main) with df13 based on role_id
+    consultants = df4.merge(
+        df13,
+        on='role_id',
+        how='left'
+    )
+
+    today = pd.Timestamp.today().normalize()
+    consultants_clean = consultants.copy()
+    consultants_clean['startdate'] = pd.to_datetime(consultants_clean['startdate'])
+    consultants_clean['enddate'] = pd.to_datetime(consultants_clean['enddate']).fillna(today)
+    consultants_clean = consultants_clean.dropna(subset=['startdate', 'hourly_rate'])
+    consultants_clean.loc[consultants_clean['enddate'] < consultants_clean['startdate'], 'enddate'] = consultants_clean['startdate']
+
+    records = []
+    for row in consultants_clean.itertuples():
+        months = pd.period_range(row.startdate, row.enddate, freq='M')
+        for month in months:
+            records.append({
+                'month': month.to_timestamp(),
+                'role_id': row.role_id,
+                'consultant_value': row.hourly_rate * 32
+            })
+
+    consultant_monthly = pd.DataFrame(records)
+    monthly_totals = (
+        consultant_monthly.groupby('month', as_index=False)['consultant_value']
+        .sum()
+        .rename(columns={'consultant_value': 'total_consultant_value'})
+    )
+    monthly_totals
+    datasets['monthly_totals'] = monthly_totals
+    
     # print info for each dataset
     print('-'*100)
     print("DATASETS CREATED")
@@ -129,7 +162,7 @@ def process_data(df1, df9, df7, df8, df10, df11):
         print('-'*100)
         
     # return all datasets 
-    return sales_pipeline, invoices, payments, time_reporting
+    return sales_pipeline, invoices, payments, time_reporting, monthly_totals
 
 # get max and min dates from invoices and payments dataframes where we have data from all tables
 def get_common_date_range(df, df2, df3):
@@ -302,7 +335,7 @@ def load_process_and_store():
             globals()[name] = df
         print(f"df1 is from file: {file_mappings['df1']}")
 
-        sales_pipeline, invoices, payments, time_reporting = process_data(df1, df9, df7, df8, df10, df11)
+        sales_pipeline, invoices, payments, time_reporting, monthly_totals = process_data(df1, df9, df7, df8, df10, df11, df4, df13)
         start_date, end_date = get_common_date_range(invoices, payments, time_reporting)
         
         # Store in session state
@@ -313,6 +346,7 @@ def load_process_and_store():
         st.session_state.start_date = start_date
         st.session_state.end_date = end_date
         st.session_state.data_loaded = True
+        st.session_state.monthly_totals = monthly_totals
     
     return (
         st.session_state.sales_pipeline,
@@ -320,5 +354,6 @@ def load_process_and_store():
         st.session_state.payments,
         st.session_state.time_reporting,
         st.session_state.start_date,
-        st.session_state.end_date
+        st.session_state.end_date,
+        st.session_state.monthly_totals
     )

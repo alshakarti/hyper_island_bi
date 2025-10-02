@@ -14,7 +14,7 @@ from src.visualization import (
 import plotly.express as px
 
 # load data
-sales_pipeline, invoices, payments, time_reporting, start_date, end_date = load_process_and_store()
+sales_pipeline, invoices, payments, time_reporting, start_date, end_date, monthly_totals = load_process_and_store()
 
 # global date filter 
 st.sidebar.subheader("Filter")

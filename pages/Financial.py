@@ -12,7 +12,7 @@ from src.visualization import (
 )
 
 # load data
-sales_pipeline, invoices, payments, time_reporting, start_date, end_date = load_process_and_store()
+sales_pipeline, invoices, payments, time_reporting, start_date, end_date, monthly_totals = load_process_and_store()
 
 # global date filter 
 st.sidebar.subheader("Filter")
@@ -87,7 +87,6 @@ financial_trend_line = st.sidebar.selectbox(
 financial_trend_line_bool = (financial_trend_line == "Yes")
 
 # KPI Cards section
-#st.markdown("#### Financial trend") 
 st.subheader("Financial") 
 st.write(f"Showing {amount_type} amount from {selected_start_month} to {selected_end_month}")
 st.markdown("---")
@@ -122,26 +121,8 @@ if kpi_data:
             # placeholder to maintain layout
             st.metric(label="", value="")  
     else:
-        # show broker breakdown
-    #    col1, col2, col3 = st.columns(3)
-        
-    #    with col1:
-    #        if kpi_data['main_avg']:
-    #            st.metric(
-    #                label="Average Net Amount", 
-    #                value=kpi_data['main_avg']['formatted_value']
-    #           )
-    #    with col2:
-    #        if kpi_data['main_sum']:
-    #            st.metric(
-    #                label="Total Net Amount", 
-    #                value=kpi_data['main_sum']['formatted_value']
-    #            )
-    #    with col3:
-            # placeholder to maintain layout
-    #        st.metric(label="", value="")  
-                
-        # Create tabs for each broker type
+               
+        # create tabs for each broker type
         tab1, tab2, tab3 = st.tabs(["Broker", "Direct", "Partner"])
         
         broker_data = kpi_data['broker_breakdown']
