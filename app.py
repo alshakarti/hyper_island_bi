@@ -158,7 +158,6 @@ if table_rows_bool:
 else:
     desired_rows = [
     'Net Amount',
-    'Payments',
     'Revenue',
     'Direct % of Net', 
     'Total Hours',
@@ -179,33 +178,33 @@ st.dataframe(
 )
 
 # dashboard net, revenue and payment graf
-st.markdown("#### Financial trend") 
-st.caption(f"Showing {amount_type} amount from {selected_start_month} to {selected_end_month}")
-st.markdown("---")
+#st.markdown("#### Financial trend") 
+#st.caption(f"Showing {amount_type} amount from {selected_start_month} to {selected_end_month}")
+#st.markdown("---")
 
-fig = plot_invoice_amounts(
-    invoices,
-    payments,
-    start_date=start_date_str,  
-    end_date=end_date_str,     
-    amount_type=amount_type,
-    hue=show_broker_bool,
-    show_trend=financial_trend_line_bool
-)
-if fig:
-    st.plotly_chart(fig, use_container_width=True)
+#fig = plot_invoice_amounts(
+#    invoices,
+#    payments,
+#    start_date=start_date_str,  
+#    end_date=end_date_str,     
+#    amount_type=amount_type,
+#    hue=show_broker_bool,
+#    show_trend=financial_trend_line_bool
+#)
+#if fig:
+#    st.plotly_chart(fig, use_container_width=True)
 
 # dashboard billable hours, non billable hours and total hours
-st.markdown("#### Hourly trend") 
-st.caption(f"Showing {hours_type} hours from {selected_start_month} to {selected_end_month}")
-st.markdown("---")
+#st.markdown("#### Hourly trend") 
+#st.caption(f"Showing {hours_type} hours from {selected_start_month} to {selected_end_month}")
+#st.markdown("---")
       
-fig_hours = plot_monthly_hours(
-    time_reporting,
-    start_date=start_date_str,
-    end_date=end_date_str,
-    hours_type=hours_type,
-    show_trend=hourly_trend_line_bool  
-)
-if fig_hours:
-    st.plotly_chart(fig_hours, use_container_width=True)
+#fig_hours = plot_monthly_hours(
+#    time_reporting,
+#    start_date=start_date_str,
+#    end_date=end_date_str,
+#    hours_type=hours_type,
+#    show_trend=hourly_trend_line_bool  
+#)
+#if fig_hours:
+#    st.plotly_chart(fig_hours, use_container_width=True)
