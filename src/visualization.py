@@ -1236,3 +1236,50 @@ def create_kpi_cards(df, df2, df3, metric_type, start_date=None, end_date=None, 
         result['broker_breakdown'] = broker_cards
     
     return result
+    fig.update_layout(
+        xaxis_title='Month',
+        yaxis_title=hours_title,
+        height=500,
+        width=900,
+        xaxis={'categoryorder': 'category ascending'}
+    )
+    return fig
+
+# (WILL) Plot monthly activities in hours
+def plot_monthly_activity_hours(df12_11):
+    """
+    Create a stacked bar chart of monthly total hours per activity.
+
+    Parameters
+    ----------
+    df12_11 : pandas.DataFrame
+        Prepared dataframe with 'activity_date', 'activity_name', and 'hours' columns.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+        Bar chart figure showing monthly hours per activity.
+    """
+    df12_11['activity_date'] = pd.to_datetime(df12_11['activity_date'])
+
+    monthly = (df12_11
+               .assign(month=df12_11['activity_date'].dt.to_period('M').dt.to_timestamp())
+               .groupby(['month', 'activity_name'], as_index=False)['hours'].sum()
+               .sort_values('month'))
+
+    fig = px.bar(
+        monthly,
+        x='month',
+        y='hours',
+        color='activity_name',
+        barmode='stack',
+        labels={'month': 'Month', 'hours': 'Hours', 'activity_name': 'Activity'},
+        custom_data=['activity_name']
+    )
+
+    fig.update_traces(
+        hovertemplate='Month: %{x|%b %Y}<br>Activity: %{customdata[0]}<br>Total: %{y:.2f} h<extra></extra>'
+    )
+
+    fig.show()
+    return fig

@@ -293,7 +293,6 @@ def get_month_filter_data(start_date, end_date, months_back=12):
         'default_end': default_end
     }
     
-
 # load and process data using session state
 def load_process_and_store():
     if 'data_loaded' not in st.session_state or not st.session_state.data_loaded:
@@ -322,3 +321,44 @@ def load_process_and_store():
         st.session_state.start_date,
         st.session_state.end_date
     )
+
+# (William) - merge df11 & 12 in order to graph activities and time logs
+def prepare_activity_data(df12, df11):
+    """
+    Merge and prepare activity time data for analysis.
+
+    Parameters
+    ----------
+    df12 : pandas.DataFrame
+        Activity time data with project_activity_id
+    df11 : pandas.DataFrame
+        Project activity data with activity_id
+
+    Returns
+    -------
+    pandas.DataFrame
+        Cleaned and merged dataframe with hours calculated (named df12_11)
+    """
+    # Merge DataFrames
+    df12_11 = df12.merge(df11, left_on='project_activity_id', right_on='activity_id', how='left')
+
+    # Drop unnecessary columns (ignore if some are missing)
+    columns_to_drop = [
+        'start_date', 'end_date', 'chargeable_date', 'max_hours',
+        'budget_hours', 'cost_per_hour', 'price_per_hour', 'price_fixed'
+    ]
+    df12_11 = df12_11.drop(columns=columns_to_drop, errors='ignore')
+
+    # Drop rows without activity_time_id (only if column exists)
+    if 'activity_time_id' in df12_11.columns:
+        df12_11 = df12_11.dropna(subset=['activity_time_id'])
+
+    # Convert minutes to hours (only if minutes exists)
+    if 'minutes' in df12_11.columns:
+        df12_11['hours'] = df12_11['minutes'] / 60
+
+    # Convert activity_date to datetime (only if column exists)
+    if 'activity_date' in df12_11.columns:
+        df12_11['activity_date'] = pd.to_datetime(df12_11['activity_date'])
+
+    return df12_11
