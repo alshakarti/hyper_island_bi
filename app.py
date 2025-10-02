@@ -7,10 +7,10 @@ from src.data_processing import (
     load_process_and_store
 )
 from src.visualization import (
-    plot_invoice_amounts,
+    #plot_invoice_amounts,
     key_metrics_monthly,
     highlight_revenue_trend,
-    plot_monthly_hours
+    #plot_monthly_hours
 )
 # customizing the page
 st.set_page_config(
@@ -70,7 +70,7 @@ end_date_obj = get_month_end_date(end_date_obj)
 end_date_str = end_date_obj.strftime('%Y-%m-%d')
 
 # table filters
-st.sidebar.subheader("Key Metrics filters")
+#st.sidebar.subheader("Key Metrics filters")
 
 trend_color = st.sidebar.selectbox(
     "Highlight MoM Trend",
@@ -89,50 +89,50 @@ table_rows = st.sidebar.selectbox(
 table_rows_bool = (table_rows == "Yes")
 
 # graf filters
-st.sidebar.subheader("Financial trends filters") 
+#st.sidebar.subheader("Financial trends filters") 
 
-amount_type = st.sidebar.selectbox(
-    "Select Amount Type",
-    options=['net', 'payments', 'revenue'],
-    index=0,
-    help="Select amount type"
-)
-if amount_type == 'net':
-    show_broker = st.sidebar.selectbox(
-        "Amount breakdown by broker",
-        options=['No', 'Yes'],
-        index=0,
-        help="Show separate bars for each broker type"
-    )
-    show_broker_bool = (show_broker == 'Yes')
-else: 
-    show_broker_bool = False
+#amount_type = st.sidebar.selectbox(
+#    "Select Amount Type",
+#    options=['net', 'payments', 'revenue'],
+#    index=0,
+#    help="Select amount type"
+#)
+#if amount_type == 'net':
+#    show_broker = st.sidebar.selectbox(
+#        "Amount breakdown by broker",
+#        options=['No', 'Yes'],
+#        index=0,
+#        help="Show separate bars for each broker type"
+#    )
+#    show_broker_bool = (show_broker == 'Yes')
+#else: 
+#    show_broker_bool = False
 
-financial_trend_line = st.sidebar.selectbox(
-    "Show regression line",
-    options=["Yes", "No"],
-    index=1,
-    help="Show regression line for financial trend"
-)
-financial_trend_line_bool = (financial_trend_line == "Yes")
+#financial_trend_line = st.sidebar.selectbox(
+#    "Show regression line",
+#    options=["Yes", "No"],
+#    index=1,
+#    help="Show regression line for financial trend"
+#)
+#financial_trend_line_bool = (financial_trend_line == "Yes")
 
 # hourly filters
-st.sidebar.subheader("Hourly trend filters")
+#st.sidebar.subheader("Hourly trend filters")
 
-hours_type = st.sidebar.selectbox(
-    "Select Hours Type",
-    options=['billable', 'non billable', 'total', 'utilization'],
-    index=0,
-    help="Select hour type"
-)
+#hours_type = st.sidebar.selectbox(
+#    "Select Hours Type",
+#    options=['billable', 'non billable', 'total', 'utilization'],
+#    index=0,
+#    help="Select hour type"
+#)
 
-hourly_trend_line = st.sidebar.selectbox(
-    "Show regression line",
-    options=["Yes", "No"],
-    index=1,
-    help="Show regression line for hours trend"
-)
-hourly_trend_line_bool = (hourly_trend_line == "Yes")
+#hourly_trend_line = st.sidebar.selectbox(
+#    "Show regression line",
+#    options=["Yes", "No"],
+#    index=1,
+#    help="Show regression line for hours trend"
+#)
+#hourly_trend_line_bool = (hourly_trend_line == "Yes")
 
 # dashboard table 
 st.markdown("#### Key Metrics") 
