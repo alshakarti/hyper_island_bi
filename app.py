@@ -7,10 +7,10 @@ from src.data_processing import (
     load_process_and_store
 )
 from src.visualization import (
-    plot_invoice_amounts,
+    #plot_invoice_amounts,
     key_metrics_monthly,
     highlight_revenue_trend,
-    plot_monthly_hours,
+    #plot_monthly_hours
 )
 # customizing the page
 st.set_page_config(
@@ -20,10 +20,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-sales_pipeline, invoices, payments, time_reporting, start_date, end_date = load_process_and_store()
+sales_pipeline, invoices, payments, time_reporting, monthly_hours, start_date, end_date = load_process_and_store()
+
+
 
 # global date filter 
-st.sidebar.header("Date filter")
+st.sidebar.subheader("Date filter")
 
 # get datetime for filter
 month_data = get_month_filter_data(start_date, end_date)
@@ -70,7 +72,7 @@ end_date_obj = get_month_end_date(end_date_obj)
 end_date_str = end_date_obj.strftime('%Y-%m-%d')
 
 # table filters
-st.sidebar.header("Key Metrics filters")
+#st.sidebar.subheader("Key Metrics filters")
 
 trend_color = st.sidebar.selectbox(
     "Highlight MoM Trend",
@@ -89,66 +91,67 @@ table_rows = st.sidebar.selectbox(
 table_rows_bool = (table_rows == "Yes")
 
 # graf filters
-st.sidebar.header("Financial trends filters") 
+#st.sidebar.subheader("Financial trends filters") 
 
-amount_type = st.sidebar.selectbox(
-    "Select Amount Type",
-    options=['net', 'payments', 'revenue'],
-    index=0,
-    help="Select amount type"
-)
-if amount_type == 'net':
-    show_broker = st.sidebar.selectbox(
-        "Amount breakdown by broker",
-        options=['No', 'Yes'],
-        index=0,
-        help="Show separate bars for each broker type"
-    )
-    show_broker_bool = (show_broker == 'Yes')
-else: 
-    show_broker_bool = False
+#amount_type = st.sidebar.selectbox(
+#    "Select Amount Type",
+#    options=['net', 'payments', 'revenue'],
+#    index=0,
+#    help="Select amount type"
+#)
+#if amount_type == 'net':
+#    show_broker = st.sidebar.selectbox(
+#        "Amount breakdown by broker",
+#        options=['No', 'Yes'],
+#        index=0,
+#        help="Show separate bars for each broker type"
+#    )
+#    show_broker_bool = (show_broker == 'Yes')
+#else: 
+#    show_broker_bool = False
 
-financial_trend_line = st.sidebar.selectbox(
-    "Show regression line",
-    options=["Yes", "No"],
-    index=1,
-    help="Show regression line for financial trend"
-)
-financial_trend_line_bool = (financial_trend_line == "Yes")
+#financial_trend_line = st.sidebar.selectbox(
+#    "Show regression line",
+#    options=["Yes", "No"],
+#    index=1,
+#    help="Show regression line for financial trend"
+#)
+#financial_trend_line_bool = (financial_trend_line == "Yes")
 
 # hourly filters
-st.sidebar.header("Hourly trend filters")
+#st.sidebar.subheader("Hourly trend filters")
 
-hours_type = st.sidebar.selectbox(
-    "Select Hours Type",
-    options=['billable', 'non billable', 'total'],
-    index=0,
-    help="Select hour type"
-)
+#hours_type = st.sidebar.selectbox(
+#    "Select Hours Type",
+#    options=['billable', 'non billable', 'total', 'utilization'],
+#    index=0,
+#    help="Select hour type"
+#)
 
-hourly_trend_line = st.sidebar.selectbox(
-    "Show regression line",
-    options=["Yes", "No"],
-    index=1,
-    help="Show regression line for hours trend"
-)
-hourly_trend_line_bool = (hourly_trend_line == "Yes")
+#hourly_trend_line = st.sidebar.selectbox(
+#    "Show regression line",
+#    options=["Yes", "No"],
+#    index=1,
+#    help="Show regression line for hours trend"
+#)
+#hourly_trend_line_bool = (hourly_trend_line == "Yes")
 
 # dashboard table 
-st.subheader("Key Metrics")
-st.markdown("---")
+st.markdown("#### Key Metrics") 
 st.caption(f"Showing KPIs from {selected_start_month} to {selected_end_month}")
+st.markdown("---")
+
 financial_data = key_metrics_monthly(invoices, payments, time_reporting, start_date=start_date_str, end_date=end_date_str)
 
 if table_rows_bool:
     # Define all potential rows we want to display
     desired_rows = [
-        'Total Net Amount',
+        'Net Amount',
         'Payments',
         'Revenue',
-        'Broker % of Total Net',
-        'Direct % of Total Net', 
-        'Partner % of Total Net',
+        'Broker % of Net',
+        'Direct % of Net', 
+        'Partner % of Net',
         'Billable Hours',
         'Non-Billable Hours',
         'Total Hours',
@@ -156,10 +159,9 @@ if table_rows_bool:
     ]
 else:
     desired_rows = [
-    'Total Net Amount',
-    'Payments',
+    'Net Amount',
     'Revenue',
-    'Direct % of Total Net', 
+    'Direct % of Net', 
     'Total Hours',
     'Utilization Percentage'
 ]
@@ -178,33 +180,33 @@ st.dataframe(
 )
 
 # dashboard net, revenue and payment graf
-st.subheader("Financial trends")
-st.markdown("---")
-st.caption(f"Showing {amount_type} amount from {selected_start_month} to {selected_end_month}")
+#st.markdown("#### Financial trend") 
+#st.caption(f"Showing {amount_type} amount from {selected_start_month} to {selected_end_month}")
+#st.markdown("---")
 
-fig = plot_invoice_amounts(
-    invoices,
-    payments,
-    start_date=start_date_str,  
-    end_date=end_date_str,     
-    amount_type=amount_type,
-    hue=show_broker_bool,
-    show_trend=financial_trend_line_bool
-)
-if fig:
-    st.plotly_chart(fig, use_container_width=True)
+#fig = plot_invoice_amounts(
+#    invoices,
+#    payments,
+#    start_date=start_date_str,  
+#    end_date=end_date_str,     
+#    amount_type=amount_type,
+#    hue=show_broker_bool,
+#    show_trend=financial_trend_line_bool
+#)
+#if fig:
+#    st.plotly_chart(fig, use_container_width=True)
 
 # dashboard billable hours, non billable hours and total hours
-st.subheader("Hourly trends")
-st.markdown("---")
-st.caption(f"Showing {hours_type} hours from {selected_start_month} to {selected_end_month}")
+#st.markdown("#### Hourly trend") 
+#st.caption(f"Showing {hours_type} hours from {selected_start_month} to {selected_end_month}")
+#st.markdown("---")
       
-fig_hours = plot_monthly_hours(
-    time_reporting,
-    start_date=start_date_str,
-    end_date=end_date_str,
-    hours_type=hours_type,
-    show_trend=hourly_trend_line_bool  
-)
-if fig_hours:
-    st.plotly_chart(fig_hours, use_container_width=True)
+#fig_hours = plot_monthly_hours(
+#    time_reporting,
+#    start_date=start_date_str,
+#    end_date=end_date_str,
+#    hours_type=hours_type,
+#    show_trend=hourly_trend_line_bool  
+#)
+#if fig_hours:
+#    st.plotly_chart(fig_hours, use_container_width=True)
