@@ -109,7 +109,6 @@ else:
     'Net Amount',
     'Revenue',
     'Direct % of Net', 
-    'Total Hours',
     'Utilization Percentage'
 ]
 
@@ -117,9 +116,15 @@ else:
 filtered_financial_data = financial_data.loc[
     [row for row in desired_rows if row in financial_data.index]
 ]
+#styled_financial_data = filtered_financial_data.style.apply(
+#    lambda row: highlight_revenue_trend(row, color=trend_color_bool), axis=1
+#)
+
 styled_financial_data = filtered_financial_data.style.apply(
-    lambda row: highlight_revenue_trend(row, color=trend_color_bool), axis=1
+    lambda row: highlight_revenue_trend(row, pivot_df=filtered_financial_data, color=trend_color_bool),
+    axis=1
 )
+
 st.dataframe(
     styled_financial_data,
     use_container_width=True,

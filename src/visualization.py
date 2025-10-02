@@ -172,59 +172,89 @@ def key_metrics_monthly(df, df2, df3, start_date=None, end_date=None):
 
     return result
 
-# apply color MoM color trend and percentage formatting to pivoted dataframe 
-def highlight_revenue_trend(row, color=True):
-    # color rows
-    target_rows = [
-        'Net Amount',
-        'Payments',
-        'Revenue',
-        'Broker % of Net',
-        'Direct % of Net',
-        'Partner % of Net',
-        'Utilization Percentage',
-        'Billable Hours',
-        'Non-Billable Hours',
-        'Total Hours'
-    ]
-    # percentage rows
-    percentage_rows = [
+# Replace the existing highlight_revenue_trend with the version below.
+def highlight_revenue_trend(row, pivot_df=None, color=True):
+    """
+    Applies:
+      - Adds % sign ONLY here (not in key_metrics_monthly) for:
+        Broker % of Net, Direct % of Net, Partner % of Net, Utilization Percentage
+      - Colors:
+          Revenue & Payments: green if Revenue >= 50% of Net (same month) else red
+          Utilization Percentage: green >=80 else red
+          Direct % of Net: green >=50 else red
+          Broker % of Net & Partner % of Net: green <=25 else red
+          Net Amount: green >= 1,600,000 else red
+    Returns list of CSS styles for the row.
+    """
+    percentage_rows = {
         'Broker % of Net',
         'Direct % of Net',
         'Partner % of Net',
         'Utilization Percentage'
-    ]
-    # convert all values to int and add %
-    if row.name in percentage_rows:
-        formatted = []
-        for v in row:
-            try:
-                val = float(str(v).replace('%', '').replace(',', ''))
-                formatted.append(f"{int(round(val))}%")
-            except Exception:
-                formatted.append(v)
-        row[:] = formatted
+    }
 
-    if row.name not in target_rows:
+    if pivot_df is None or 'Net Amount' not in pivot_df.index:
         return [''] * len(row)
-    # convert values to int (remove commas and % if present)
-    values = []
-    for v in row:
+
+    def to_number(val):
         try:
-            values.append(int(str(v).replace(',', '').replace('%', '')))
+            return float(str(val).replace(',', '').replace('%', '').strip())
         except Exception:
-            values.append(0)
-    # compare each month to previous (first column has no previous month)
-    styles = ['']
-    for i in range(1, len(values)):
-        if not color:
-            styles.append('')
-        elif values[i] > values[i-1]:
-            styles.append('color: green; font-weight: bold;')
-        elif values[i] < values[i-1]:
-            styles.append('color: red; font-weight: bold;')
+            return 0.0
+
+    # Capture numeric values BEFORE we add % signs (so we can evaluate thresholds)
+    numeric_values = {col: to_number(val) for col, val in row.items()}
+
+    # If this is a percentage row, add % signs (mutate pivot_df so they display)
+    if row.name in percentage_rows:
+        # Only add if not already formatted
+        def fmt_percent(v):
+            # v expected numeric (int/float or already string); parse again safely
+            num = to_number(v)
+            return f"{int(round(num))}%"
+        # mutate the full DataFrame so styling shows updated values
+        pivot_df.loc[row.name] = [fmt_percent(v) for v in row.values]
+        # refresh local row view to reflect mutation (Styler works with original df; but row
+        # copy won't change – that's fine, we already have numeric_values)
+
+    # Stop early if no color requested (but still ensured % above)
+    if not color:
+        return [''] * len(row)
+
+    # Pre-fetch comparison rows (need raw numbers, so parse after potential prior formatting)
+    net_row_nums = {
+        col: to_number(pivot_df.loc['Net Amount', col]) for col in pivot_df.columns
+    }
+    revenue_row_nums = None
+    if 'Revenue' in pivot_df.index:
+        revenue_row_nums = {
+            col: to_number(pivot_df.loc['Revenue', col]) for col in pivot_df.columns
+        }
+
+    styles = []
+    rn = row.name
+
+    for col in row.index:
+        val = numeric_values[col]
+        if rn in ('Revenue', 'Payments'):
+            net_val = net_row_nums.get(col, 0)
+            rev_val = revenue_row_nums.get(col, 0) if revenue_row_nums else val
+            if net_val > 0 and rev_val >= 0.5 * net_val:
+                styles.append('color: green; font-weight: bold;')
+            elif net_val > 0:
+                styles.append('color: red; font-weight: bold;')
+            else:
+                styles.append('')
+        elif rn == 'Net Amount':
+            styles.append('color: green; font-weight: bold;' if val >= 1_600_000 else 'color: red; font-weight: bold;')
+        elif rn == 'Utilization Percentage':
+            styles.append('color: green; font-weight: bold;' if val >= 80 else 'color: red; font-weight: bold;')
+        elif rn == 'Direct % of Net':
+            styles.append('color: green; font-weight: bold;' if val >= 50 else 'color: red; font-weight: bold;')
+        elif rn in ('Broker % of Net', 'Partner % of Net'):
+            styles.append('color: green; font-weight: bold;' if val <= 25 else 'color: red; font-weight: bold;')
         else:
-            styles.append('')
+            styles.append('')  # No styling for other rows
     return styles
 
 # plot net, total, payments or revenue by month with optional broker hue
@@ -546,6 +576,31 @@ def plot_invoice_amounts_line(df, df2=None, start_date=None, end_date=None, amou
         fig.update_traces(
             hovertemplate='Month: %{x}<br>' + f'{amount_title}: %{{y:,.2f}} SEK'
         )
+    
+    # dynamic net amount target, 15% increase over previous year's monthly average 
+    target_value = None
+    base_df = df.copy()
+    base_df['final_pay_date'] = pd.to_datetime(base_df['final_pay_date'], errors='coerce')
+    base_df = base_df.dropna(subset=['final_pay_date'])
+    latest_year = plot_df['final_pay_date'].dt.year.max()
+    if not base_df.empty and pd.notna(latest_year):
+        previous_year = int(latest_year) - 1
+        prev_year_df = base_df[base_df['final_pay_date'].dt.year == previous_year]
+        if not prev_year_df.empty:
+            previous_year_total_net = prev_year_df['invoice_amount_net'].sum()
+            target_value = (previous_year_total_net * 1.15) / 12
+            target_value = float(np.ceil(target_value / 100000.0) * 100000)
+    
+    if amount_type.lower() == 'net' and not hue and target_value is not None:
+        fig.add_hline(
+            y=target_value, 
+            #y=1_600_000,    
+            line_dash='dash',
+            line_color='orange',    
+            annotation_text=f'Monthly Target: {target_value:,.0f} SEK',
+            #annotation_text='Monthly Target: 1.6M SEK',
+            annotation_position='top right'
+    )
 
     # multiple regression lines for when hue is true
     if show_trend and len(monthly_data) > 1:
@@ -790,7 +845,7 @@ def plot_monthly_hours_line(df_time, start_date=None, end_date=None, hours_type=
             y=80,
             line_dash="dash",
             line_color="orange",
-            annotation_text="Target: 80%",
+            annotation_text="Monthly Target: 80%",
             annotation_position="bottom right"
         )
         

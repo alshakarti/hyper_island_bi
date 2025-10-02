@@ -328,3 +328,60 @@ def sales_funnel_viz2(df, weighted_amount=True, time_filter_start=None, time_fil
         width=800
     )    
     return fig
+
+
+# apply color MoM color trend and percentage formatting to pivoted dataframe 
+def highlight_revenue_trend(row, color=True):
+    # color rows
+    target_rows = [
+        'Net Amount',
+        'Payments',
+        'Revenue',
+        'Broker % of Net',
+        'Direct % of Net',
+        'Partner % of Net',
+        'Utilization Percentage',
+        'Billable Hours',
+        'Non-Billable Hours',
+        'Total Hours'
+    ]
+    # percentage rows
+    percentage_rows = [
+        'Broker % of Net',
+        'Direct % of Net',
+        'Partner % of Net',
+        'Utilization Percentage'
+    ]
+    # convert all values to int and add %
+    if row.name in percentage_rows:
+        formatted = []
+        for v in row:
+            try:
+                val = float(str(v).replace('%', '').replace(',', ''))
+                formatted.append(f"{int(round(val))}%")
+            except Exception:
+                formatted.append(v)
+        row[:] = formatted
+
+    if row.name not in target_rows:
+        return [''] * len(row)
+    # convert values to int (remove commas and % if present)
+    values = []
+    for v in row:
+        try:
+            values.append(int(str(v).replace(',', '').replace('%', '')))
+        except Exception:
+            values.append(0)
+    # compare each month to previous (first column has no previous month)
+    styles = ['']
+    for i in range(1, len(values)):
+        if not color:
+            styles.append('')
+        elif values[i] > values[i-1]:
+            styles.append('color: green; font-weight: bold;')
+        elif values[i] < values[i-1]:
+            styles.append('color: red; font-weight: bold;')
+        else:
+            styles.append('')
+    return styles
+

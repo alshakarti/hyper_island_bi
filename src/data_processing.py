@@ -261,6 +261,7 @@ def get_month_options(start_date, end_date):
     
     return months
 
+# create default date filter 
 def get_month_filter_data(start_date, end_date, months_back=12):
     """
     Calculate default month ranges and create month options for date filtering.
