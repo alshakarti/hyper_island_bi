@@ -8,7 +8,7 @@ from src.data_processing import load_process_and_store, get_month_filter_data, g
 _, _, _, time_reporting, start_date, end_date = load_process_and_store()
 
 st.header("Utilization by Seniority (Proof of Concept)")
-st.caption("⚠️ Demo only: Employees are manually or evenly assigned to seniority tiers (K1–K4).")
+st.caption(" Demo only: Employees need to be  manually or evenly assigned to seniority tiers (K1–K4).")
 
 # --- Sidebar Date Filter ---
 st.sidebar.header("Date filter")
