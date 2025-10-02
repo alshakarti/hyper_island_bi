@@ -3,7 +3,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 import numpy as np
 
-
 # first version only with weighted amount filter 
 def sales_funnel_viz(df, weighted_amount=True):
     """
