@@ -266,7 +266,7 @@ def key_metrics_monthly(df, df2, df3, start_date=None, end_date=None):
     pivot_rows = []
     
     # add total rows (independent of broker type)
-    pivot_rows.append(('Total Net Amount', plot_df.groupby('month_str')['invoice_amount_net'].sum()))
+    pivot_rows.append(('Net Amount', plot_df.groupby('month_str')['invoice_amount_net'].sum()))
     pivot_rows.append(('Total Invoice Amount', plot_df.groupby('month_str')['invoice_amount_total'].sum()))
     
     # add rows for each broker type
@@ -279,7 +279,7 @@ def key_metrics_monthly(df, df2, df3, start_date=None, end_date=None):
             broker_subset = broker_subset.set_index('month_str')
             pivot_rows.append((f'{broker_type} Net Amount', broker_subset['net_amount']))
             pivot_rows.append((f'{broker_type} Total Amount', broker_subset['total_amount']))
-            pivot_rows.append((f'{broker_type} % of Total Net', broker_subset['pct_of_net']))
+            pivot_rows.append((f'{broker_type} % of Net', broker_subset['pct_of_net']))
     
     # add Payments row from payments_df (already filtered)
     payments_df['month_str'] = payments_df['final_pay_date'].dt.strftime('%Y-%m')
@@ -325,7 +325,7 @@ def key_metrics_monthly(df, df2, df3, start_date=None, end_date=None):
     result = result.applymap(lambda x: int(round(x)) if not isinstance(x, str) else x)
 
     # format percentage columns as strings with % and no decimals
-    percentage_rows = ['Broker % of Total Net', 'Direct % of Total Net', 'Partner % of Total Net', 'Utilization Percentage']
+    percentage_rows = ['Broker % of Net', 'Direct % of Net', 'Partner % of Net', 'Utilization Percentage']
     for row in percentage_rows:
         if row in result.index:
             result.loc[row] = result.loc[row].apply(lambda x: f"{int(round(x))}%")
@@ -356,12 +356,12 @@ def key_metrics_monthly(df, df2, df3, start_date=None, end_date=None):
 def highlight_revenue_trend(row, color=True):
     # color rows
     target_rows = [
-        'Total Net Amount',
+        'Net Amount',
         'Payments',
         'Revenue',
-        'Broker % of Total Net',
-        'Direct % of Total Net',
-        'Partner % of Total Net',
+        'Broker % of Net',
+        'Direct % of Net',
+        'Partner % of Net',
         'Utilization Percentage',
         'Billable Hours',
         'Non-Billable Hours',
@@ -369,9 +369,9 @@ def highlight_revenue_trend(row, color=True):
     ]
     # percentage rows
     percentage_rows = [
-        'Broker % of Total Net',
-        'Direct % of Total Net',
-        'Partner % of Total Net',
+        'Broker % of Net',
+        'Direct % of Net',
+        'Partner % of Net',
         'Utilization Percentage'
     ]
     # convert all values to int and add %
@@ -590,10 +590,192 @@ def plot_invoice_amounts(df, df2=None, start_date=None, end_date=None, amount_ty
     )
     return fig
 
+def plot_invoice_amounts_line(df, df2=None, start_date=None, end_date=None, amount_type='net', hue=False, show_trend=False):
+    """
+    Plot invoice amounts by month based on final payment date.
+    Supports plotting net, total, payments, or revenue.
+
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        The invoice dataframe
+    df2 : pandas DataFrame, optional
+        The payments dataframe (required for payments/revenue)
+    start_date : str, optional
+        Start date for filtering in 'YYYY-MM-DD' format
+    end_date : str, optional
+        End date for filtering in 'YYYY-MM-DD' format
+    amount_type : str, default 'net'
+        Type of amount to plot: 'net', 'total', 'payments', or 'revenue'
+    hue : bool, default False
+        If True, group and color by broker column
+
+    Returns:
+    --------
+    None: Displays the plotly figure
+    """
+    plot_df = df.copy()
+    plot_df = plot_df.dropna(subset=['final_pay_date'])
+    
+    # convert dates to datetime objects once
+    start_date_dt = pd.to_datetime(start_date) if start_date else None
+    end_date_dt = pd.to_datetime(end_date) if end_date else None
+
+    # apply date filters to invoice data
+    if start_date_dt:
+        plot_df = plot_df[plot_df['final_pay_date'] >= start_date_dt]
+    if end_date_dt:
+        plot_df = plot_df[plot_df['final_pay_date'] <= end_date_dt]
+    
+    if plot_df.empty:
+        print("No invoice data available after applying date filters.")
+        return None
+
+    plot_df['month'] = plot_df['final_pay_date'].dt.to_period('M')
+    plot_df['month_str'] = plot_df['month'].dt.strftime('%Y-%m')
+
+    # prepare payments and revenue if needed
+    payments_by_month = None
+    revenue_by_month = None
+    if amount_type.lower() in ['payments', 'revenue']:
+        if df2 is None:
+            raise ValueError("df2 (payments dataframe) must be provided for payments or revenue plots.")
+        
+        # apply the same date filters to payments data
+        payments_df = df2.dropna(subset=['final_pay_date']).copy()
+        
+        # apply date filters to payments data too
+        if start_date_dt:
+            payments_df = payments_df[payments_df['final_pay_date'] >= start_date_dt]
+        if end_date_dt:
+            payments_df = payments_df[payments_df['final_pay_date'] <= end_date_dt]
+            
+        # check if we have payments data after filtering
+        if payments_df.empty and amount_type.lower() == 'payments':
+            print("No payment data available after applying date filters.")
+            return None
+        
+        payments_df['month_str'] = payments_df['final_pay_date'].dt.strftime('%Y-%m')
+        payments_by_month = payments_df.groupby('month_str')['invoice_payment'].sum()
+        
+        # for revenue, we need both invoices and payments
+        if amount_type.lower() == 'revenue':
+            total_net_series = plot_df.groupby('month_str')['invoice_amount_net'].sum()
+            revenue_by_month = total_net_series.subtract(payments_by_month, fill_value=0)
+            
+            # if there's no revenue data after calculation
+            if revenue_by_month.empty:
+                print("No revenue data available after calculations.")
+                return None
+
+    # select the amount column and title
+    if amount_type.lower() == 'net':
+        amount_col = 'invoice_amount_net'
+        amount_title = 'Net Invoice Amount'
+        monthly_data = plot_df.groupby('month_str')[amount_col].sum().reset_index()
+    elif amount_type.lower() == 'total':
+        amount_col = 'invoice_amount_total'
+        amount_title = 'Total Invoice Amount'
+        monthly_data = plot_df.groupby('month_str')[amount_col].sum().reset_index()
+    elif amount_type.lower() == 'payments':
+        amount_title = 'Payments'
+        monthly_data = payments_by_month.reset_index()
+        monthly_data.columns = ['month_str', 'Payments']
+    elif amount_type.lower() == 'revenue':
+        amount_title = 'Revenue'
+        monthly_data = revenue_by_month.reset_index()
+        monthly_data.columns = ['month_str', 'Revenue']
+    else:
+        raise ValueError("amount_type must be 'net', 'total', 'payments', or 'revenue'")
+
+    # make sure we have data to plot or error out 
+    if monthly_data.empty:
+        print(f"No {amount_type} data available for the selected date range.")
+        return None
+
+    # plot - CHANGED FROM BAR TO LINE
+    if hue and amount_type.lower() in ['net', 'total']:
+        monthly_data = plot_df.groupby(['month_str', 'broker'])[amount_col].sum().reset_index()
+        fig = px.line(
+            monthly_data,
+            x='month_str',
+            y=amount_col,
+            color='broker',
+            labels={
+                'month_str': 'Month',
+                amount_col: f'{amount_title} (SEK)',
+                'broker': 'Broker'
+            },
+            markers=True  # Add markers to make data points visible
+        )
+        fig.update_traces(
+            hovertemplate='Month: %{x}<br>Broker: %{fullData.name}<br>' + f'{amount_title}: %{{y:,.2f}} SEK'
+        )
+    else:
+        y_col = monthly_data.columns[1]
+        fig = px.line(
+            monthly_data,
+            x='month_str',
+            y=y_col,
+            labels={
+                'month_str': 'Month',
+                y_col: f'{amount_title} (SEK)'
+            },
+            markers=True  # Add markers to make data points visible
+        )
+        fig.update_traces(
+            hovertemplate='Month: %{x}<br>' + f'{amount_title}: %{{y:,.2f}} SEK'
+        )
+
+    # multiple regression lines for when hue is true
+    if show_trend and len(monthly_data) > 1:
+        if hue and amount_type.lower() in ['net', 'total']:
+            for broker in monthly_data['broker'].unique():
+                broker_data = monthly_data[monthly_data['broker'] == broker].copy()
+                if len(broker_data) > 1:
+                    broker_data = broker_data.sort_values('month_str')
+                    broker_data['x_numeric'] = range(len(broker_data))
+                    coeffs = np.polyfit(broker_data['x_numeric'], broker_data[amount_col], 1)
+                    trend = np.polyval(coeffs, broker_data['x_numeric'])
+                    fig.add_traces(
+                        go.Scatter(
+                            x=broker_data['month_str'],
+                            y=trend,
+                            mode='lines',
+                            name=f'{broker} Trend',
+                            line=dict(dash='dash'),
+                            showlegend=True
+                        )
+                    )
+        # single regression line for when hue is false
+        elif not hue:
+            y_col = monthly_data.columns[1]
+            monthly_data['x_numeric'] = range(len(monthly_data))
+            coeffs = np.polyfit(monthly_data['x_numeric'], monthly_data[y_col], 1)
+            trend = np.polyval(coeffs, monthly_data['x_numeric'])
+            fig.add_traces(
+                go.Scatter(
+                    x=monthly_data['month_str'],
+                    y=trend,
+                    mode='lines',
+                    name='Trend',
+                    line=dict(color='red', dash='dash')
+                )
+            )
+    
+    fig.update_layout(
+        xaxis_title='Month',
+        yaxis_title=f'{amount_title} (SEK)',
+        height=430,
+   
+        xaxis={'categoryorder': 'category ascending'}
+    )
+    return fig
+
 # total, billable and non billable hours
 def plot_monthly_hours(df_time, start_date=None, end_date=None, hours_type='total', show_trend=False):
     """
-    Aggregate and plot monthly billable, non-billable, or total hours, with optional regression line.
+    Aggregate and plot monthly billable, non-billable, total hours, or utilization percentage, with optional regression line.
 
     Parameters:
     -----------
@@ -604,7 +786,7 @@ def plot_monthly_hours(df_time, start_date=None, end_date=None, hours_type='tota
     end_date : str, optional
         End date for filtering in 'YYYY-MM-DD' format
     hours_type : str, default 'total'
-        Which hours to plot: 'billable', 'non_billable', or 'total'
+        Which metric to plot: 'billable', 'non_billable', 'total', or 'utilization'
     show_trend : bool, default False
         Whether to show a regression (trend) line
 
@@ -624,14 +806,36 @@ def plot_monthly_hours(df_time, start_date=None, end_date=None, hours_type='tota
     if hours_type == 'billable':
         col = 'billable_hours'
         hours_title = 'Billable Hours'
+        y_axis_title = 'Hours'
+        hover_format = ':,.2f'
     elif hours_type == 'non billable':
         col = 'non_billable_hours'
         hours_title = 'Non-Billable Hours'
+        y_axis_title = 'Hours'
+        hover_format = ':,.2f'
+    elif hours_type == 'utilization':
+        # Calculate utilization percentage monthly
+        monthly = df.groupby('month_str').agg(
+            billable_hours=('billable_hours', 'sum'),
+            total_hours=('total_hours', 'sum')
+        ).reset_index()
+        monthly['utilization_percentage'] = (
+            (monthly['billable_hours'] / monthly['total_hours']).replace([np.inf, -np.inf], 0).fillna(0) * 100
+        ).round(0)  
+        col = 'utilization_percentage'
+        hours_title = 'Utilization Percentage'
+        y_axis_title = 'Percentage (%)'
+        hover_format = ':,.1f}%'
     else:
         col = 'total_hours'
         hours_title = 'Total Hours'
+        y_axis_title = 'Hours'
+        hover_format = ':,.2f'
 
-    monthly = df.groupby('month_str')[col].sum().reset_index()
+    # For non-utilization metrics, aggregate normally
+    if hours_type != 'utilization':
+        monthly = df.groupby('month_str')[col].sum().reset_index()
+    
     if monthly.empty:
         return None
 
@@ -640,11 +844,18 @@ def plot_monthly_hours(df_time, start_date=None, end_date=None, hours_type='tota
         x='month_str',
         y=col,
         labels={'month_str': 'Month', col: hours_title},
-        text_auto='.2s'
+        text_auto='.2s' if hours_type != 'utilization' else '.0f'
     )
-    fig.update_traces(
-        hovertemplate='Month: %{x}<br>' + f'{hours_title}: %{{y:,.2f}}'
-    )
+    
+    if hours_type == 'utilization':
+        fig.update_traces(
+            hovertemplate='Month: %{x}<br>' + f'{hours_title}: %{{y{hover_format}<extra></extra>'
+        )
+        fig.update_traces(texttemplate='%{y:.0f}%', textposition="outside")
+    else:
+        fig.update_traces(
+            hovertemplate='Month: %{x}<br>' + f'{hours_title}: %{{y{hover_format}<extra></extra>'
+        )
 
     # add regression line
     if show_trend and len(monthly) > 1:
@@ -665,9 +876,356 @@ def plot_monthly_hours(df_time, start_date=None, end_date=None, hours_type='tota
 
     fig.update_layout(
         xaxis_title='Month',
-        yaxis_title=hours_title,
-        height=500,
-        width=900,
+        yaxis_title=y_axis_title,
+        height=430,
         xaxis={'categoryorder': 'category ascending'}
     )
     return fig
+
+def plot_monthly_hours_line(df_time, start_date=None, end_date=None, hours_type='total', show_trend=False):
+    """
+    Aggregate and plot monthly billable, non-billable, total hours, or utilization percentage, with optional regression line.
+
+    Parameters:
+    -----------
+    df_time : pandas DataFrame
+        The time reporting dataframe (must have 'date', 'billable_hours', 'non_billable_hours', 'total_hours')
+    start_date : str, optional
+        Start date for filtering in 'YYYY-MM-DD' format
+    end_date : str, optional
+        End date for filtering in 'YYYY-MM-DD' format
+    hours_type : str, default 'total'
+        Which metric to plot: 'billable', 'non_billable', 'total', or 'utilization'
+    show_trend : bool, default False
+        Whether to show a regression (trend) line
+
+    Returns:
+    --------
+    plotly Figure or None
+    """
+    df = df_time.copy()
+    df['date'] = pd.to_datetime(df['date'])
+    if start_date:
+        df = df[df['date'] >= pd.to_datetime(start_date)]
+    if end_date:
+        df = df[df['date'] <= pd.to_datetime(end_date)]
+
+    df['month_str'] = df['date'].dt.strftime('%Y-%m')
+
+    if hours_type == 'billable':
+        col = 'billable_hours'
+        hours_title = 'Billable Hours'
+        y_axis_title = 'Hours'
+        hover_format = ':,.2f'
+    elif hours_type == 'non billable':
+        col = 'non_billable_hours'
+        hours_title = 'Non-Billable Hours'
+        y_axis_title = 'Hours'
+        hover_format = ':,.2f'
+    elif hours_type == 'utilization':
+        # Calculate utilization percentage monthly
+        monthly = df.groupby('month_str').agg(
+            billable_hours=('billable_hours', 'sum'),
+            total_hours=('total_hours', 'sum')
+        ).reset_index()
+        monthly['utilization_percentage'] = (
+            (monthly['billable_hours'] / monthly['total_hours']).replace([np.inf, -np.inf], 0).fillna(0) * 100
+        ).round(0)  
+        col = 'utilization_percentage'
+        hours_title = 'Utilization Percentage'
+        y_axis_title = 'Percentage (%)'
+        hover_format = ':,.1f}%'
+    else:
+        col = 'total_hours'
+        hours_title = 'Total Hours'
+        y_axis_title = 'Hours'
+        hover_format = ':,.2f'
+
+    # For non-utilization metrics, aggregate normally
+    if hours_type != 'utilization':
+        monthly = df.groupby('month_str')[col].sum().reset_index()
+    
+    if monthly.empty:
+        return None
+
+    # CHANGED FROM BAR TO LINE CHART
+    fig = px.line(
+        monthly,
+        x='month_str',
+        y=col,
+        labels={'month_str': 'Month', col: hours_title},
+        markers=True  # Add markers to make data points visible
+    )
+    
+    if hours_type == 'utilization':
+        fig.update_traces(
+            hovertemplate='Month: %{x}<br>' + f'{hours_title}: %{{y{hover_format}<extra></extra>'
+        )
+    else:
+        fig.update_traces(
+            hovertemplate='Month: %{x}<br>' + f'{hours_title}: %{{y{hover_format}<extra></extra>'
+        )
+
+    # add regression line
+    if show_trend and len(monthly) > 1:
+        # Numeric x for regression
+        monthly['x_numeric'] = range(len(monthly))
+        # Fit a linear regression
+        coeffs = np.polyfit(monthly['x_numeric'], monthly[col], 1)
+        trend = np.polyval(coeffs, monthly['x_numeric'])
+        fig.add_traces(
+            go.Scatter(
+                x=monthly['month_str'],
+                y=trend,
+                mode='lines',
+                name='Trend',
+                line=dict(color='red', dash='dash')
+            )
+        )
+
+    # Set y-axis range for utilization to 0-100%
+    if hours_type == 'utilization':
+        fig.update_layout(
+            xaxis_title='Month',
+            yaxis_title=y_axis_title,
+            height=430,
+            xaxis={'categoryorder': 'category ascending'},
+            yaxis={'range': [0, 100]}  # Fix y-axis range for utilization
+        )
+    else:
+        fig.update_layout(
+            xaxis_title='Month',
+            yaxis_title=y_axis_title,
+            height=430,
+            xaxis={'categoryorder': 'category ascending'}
+        )
+    
+    return fig
+
+def get_metric_row(df, df2, df3, row_name, start_date=None, end_date=None):
+    """
+    Extract a specific row from the key_metrics_monthly pivot table.
+    
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        The invoice dataframe
+    df2 : pandas DataFrame
+        The payments dataframe
+    df3 : pandas DataFrame
+        The time reporting dataframe
+    row_name : str
+        Name of the row to extract (e.g., 'Revenue', 'Net Amount', 'Utilization Percentage')
+    start_date : str, optional
+        Start date for filtering in 'YYYY-MM-DD' format
+    end_date : str, optional
+        End date for filtering in 'YYYY-MM-DD' format
+        
+    Returns:
+    --------
+    pandas Series or None: The requested row data, or None if row doesn't exist
+    """
+    # Get the full pivot table
+    pivot_data = key_metrics_monthly(df, df2, df3, start_date, end_date)
+    
+    # Check if the row exists in the pivot table
+    if row_name in pivot_data.index:
+        return pivot_data.loc[row_name]
+    else:
+        print(f"Row '{row_name}' not found in the data.")
+        return None
+
+def create_average_kpi_card(df, df2, df3, row_name, start_date=None, end_date=None):
+    """
+    Create a KPI card showing the average value of a specific metric row.
+    
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        The invoice dataframe
+    df2 : pandas DataFrame
+        The payments dataframe
+    df3 : pandas DataFrame
+        The time reporting dataframe
+    row_name : str
+        Name of the row to calculate average for
+    start_date : str, optional
+        Start date for filtering in 'YYYY-MM-DD' format
+    end_date : str, optional
+        End date for filtering in 'YYYY-MM-DD' format
+        
+    Returns:
+    --------
+    dict: Contains the metric name, average value, and formatted display value
+    """
+    # Get the specific row data
+    row_data = get_metric_row(df, df2, df3, row_name, start_date, end_date)
+    
+    if row_data is None:
+        return None
+    
+    # Convert values to numeric (remove commas and % signs)
+    numeric_values = []
+    for value in row_data:
+        try:
+            # Remove commas and % signs, then convert to float
+            clean_value = str(value).replace(',', '').replace('%', '')
+            numeric_values.append(float(clean_value))
+        except (ValueError, TypeError):
+            continue
+    
+    if not numeric_values:
+        return None
+    
+    # Calculate average
+    avg_value = sum(numeric_values) / len(numeric_values)
+    
+    # Format the display value based on metric type
+    percentage_metrics = ['Broker % of Net', 'Direct % of Net', 'Partner % of Net', 'Utilization Percentage']
+    
+    if row_name in percentage_metrics:
+        formatted_value = f"{avg_value:.0f}%"
+    else:
+        formatted_value = f"{avg_value:,.0f}"
+    
+    return {
+        'metric_name': row_name,
+        'value': avg_value,
+        'formatted_value': formatted_value,
+        'type': 'average'
+    }
+
+def create_sum_kpi_card(df, df2, df3, row_name, start_date=None, end_date=None):
+    """
+    Create a KPI card showing the sum of a specific metric row.
+    
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        The invoice dataframe
+    df2 : pandas DataFrame
+        The payments dataframe
+    df3 : pandas DataFrame
+        The time reporting dataframe
+    row_name : str
+        Name of the row to calculate sum for
+    start_date : str, optional
+        Start date for filtering in 'YYYY-MM-DD' format
+    end_date : str, optional
+        End date for filtering in 'YYYY-MM-DD' format
+        
+    Returns:
+    --------
+    dict: Contains the metric name, sum value, and formatted display value
+    """
+    # Get the specific row data
+    row_data = get_metric_row(df, df2, df3, row_name, start_date, end_date)
+    
+    if row_data is None:
+        return None
+    
+    # Convert values to numeric (remove commas and % signs)
+    numeric_values = []
+    for value in row_data:
+        try:
+            # Remove commas and % signs, then convert to float
+            clean_value = str(value).replace(',', '').replace('%', '')
+            numeric_values.append(float(clean_value))
+        except (ValueError, TypeError):
+            continue
+    
+    if not numeric_values:
+        return None
+    
+    # Calculate sum
+    sum_value = sum(numeric_values)
+    
+    # Format the display value based on metric type
+    percentage_metrics = ['Broker % of Net', 'Direct % of Net', 'Partner % of Net', 'Utilization Percentage']
+    
+    if row_name in percentage_metrics:
+        # For percentages, sum might not make sense, but we'll format it anyway
+        formatted_value = f"{sum_value:.0f}%"
+    else:
+        formatted_value = f"{sum_value:,.0f}"
+    
+    return {
+        'metric_name': row_name,
+        'value': sum_value,
+        'formatted_value': formatted_value,
+        'type': 'sum'
+    }
+
+def create_kpi_cards(df, df2, df3, metric_type, start_date=None, end_date=None, show_broker=False):
+    """
+    Create KPI cards showing sum and average for a specific metric, with optional broker breakdown.
+    
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        The invoice dataframe
+    df2 : pandas DataFrame
+        The payments dataframe
+    df3 : pandas DataFrame
+        The time reporting dataframe
+    metric_type : str
+        Type of metric: 'net', 'payments', 'revenue', 'billable', 'non billable', 'total', 'utilization'
+    start_date : str, optional
+        Start date for filtering in 'YYYY-MM-DD' format
+    end_date : str, optional
+        End date for filtering in 'YYYY-MM-DD' format
+    show_broker : bool, default False
+        Whether to show broker breakdown
+        
+    Returns:
+    --------
+    dict: Contains metric cards data
+    """
+    # Map metric types to row names
+    metric_mapping = {
+        'net': 'Net Amount',
+        'payments': 'Payments', 
+        'revenue': 'Revenue',
+        'billable': 'Billable Hours',
+        'non billable': 'Non-Billable Hours',
+        'total': 'Total Hours',
+        'utilization': 'Utilization Percentage'
+    }
+    
+    row_name = metric_mapping.get(metric_type)
+    if not row_name:
+        return None
+    
+    # Get the main metric cards
+    avg_card = create_average_kpi_card(df, df2, df3, row_name, start_date, end_date)
+    sum_card = create_sum_kpi_card(df, df2, df3, row_name, start_date, end_date)
+    
+    result = {
+        'main_avg': avg_card,
+        'main_sum': sum_card,
+        'broker_breakdown': None
+    }
+    
+    # Add broker breakdown if requested and metric is 'net'
+    if show_broker and metric_type == 'net':
+        broker_cards = {}
+        broker_types = ['Broker', 'Direct', 'Partner']
+        
+        for broker in broker_types:
+            # For net amount, we need to use the broker-specific row names
+            broker_net_row = f'{broker} Net Amount'
+            broker_pct_row = f'{broker} % of Net'
+            
+            avg_net = create_average_kpi_card(df, df2, df3, broker_net_row, start_date, end_date)
+            sum_net = create_sum_kpi_card(df, df2, df3, broker_net_row, start_date, end_date)
+            avg_pct = create_average_kpi_card(df, df2, df3, broker_pct_row, start_date, end_date)
+            
+            broker_cards[broker.lower()] = {
+                'avg_amount': avg_net,
+                'sum_amount': sum_net,
+                'avg_percentage': avg_pct
+            }
+        
+        result['broker_breakdown'] = broker_cards
+    
+    return result
