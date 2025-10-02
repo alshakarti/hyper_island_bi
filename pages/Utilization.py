@@ -13,7 +13,7 @@ from src.visualization import (
 
 import plotly.express as px
 
-# Load data
+# load data
 sales_pipeline, invoices, payments, time_reporting, start_date, end_date = load_process_and_store()
 
 # global date filter 
@@ -80,8 +80,8 @@ hourly_trend_line = st.sidebar.selectbox(
 hourly_trend_line_bool = (hourly_trend_line == "Yes")
 
 # KPI Cards section
-st.markdown("#### Utilization") 
-st.caption(f"Showing {hours_type} hours from {selected_start_month} to {selected_end_month}")
+st.subheader("Utilization") 
+st.write(f"Showing {hours_type} hours from {selected_start_month} to {selected_end_month}")
 st.markdown("---")
 
 # Get KPI cards data
@@ -96,7 +96,6 @@ kpi_data = create_kpi_cards(
 )
 
 if kpi_data:
-    # For hours, we always use 3-column layout for consistency
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -128,7 +127,7 @@ if kpi_data:
     with col3:
         st.metric(label="", value="") 
 
-# Hours trend chart
+# hours trend chart
 fig_hours = plot_monthly_hours_line(
     time_reporting,
     start_date=start_date_str,

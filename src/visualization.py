@@ -832,7 +832,7 @@ def plot_monthly_hours(df_time, start_date=None, end_date=None, hours_type='tota
         y_axis_title = 'Hours'
         hover_format = ':,.2f'
 
-    # For non-utilization metrics, aggregate normally
+    # for non-utilization metrics, aggregate normally
     if hours_type != 'utilization':
         monthly = df.groupby('month_str')[col].sum().reset_index()
     
@@ -861,7 +861,6 @@ def plot_monthly_hours(df_time, start_date=None, end_date=None, hours_type='tota
     if show_trend and len(monthly) > 1:
         # Numeric x for regression
         monthly['x_numeric'] = range(len(monthly))
-        # Fit a linear regression
         coeffs = np.polyfit(monthly['x_numeric'], monthly[col], 1)
         trend = np.polyval(coeffs, monthly['x_numeric'])
         fig.add_traces(
@@ -941,14 +940,13 @@ def plot_monthly_hours_line(df_time, start_date=None, end_date=None, hours_type=
         y_axis_title = 'Hours'
         hover_format = ':,.2f'
 
-    # For non-utilization metrics, aggregate normally
+    # for non-utilization metrics, aggregate normally
     if hours_type != 'utilization':
         monthly = df.groupby('month_str')[col].sum().reset_index()
     
     if monthly.empty:
         return None
 
-    # CHANGED FROM BAR TO LINE CHART
     fig = px.line(
         monthly,
         x='month_str',
@@ -966,6 +964,16 @@ def plot_monthly_hours_line(df_time, start_date=None, end_date=None, hours_type=
             hovertemplate='Month: %{x}<br>' + f'{hours_title}: %{{y{hover_format}<extra></extra>'
         )
 
+    # Add 80% reference line for utilization
+    if hours_type == 'utilization':
+        fig.add_hline(
+            y=80,
+            line_dash="dash",
+            line_color="orange",
+            annotation_text="Target: 80%",
+            annotation_position="bottom right"
+        )
+        
     # add regression line
     if show_trend and len(monthly) > 1:
         # Numeric x for regression
@@ -1058,17 +1066,17 @@ def create_average_kpi_card(df, df2, df3, row_name, start_date=None, end_date=No
     --------
     dict: Contains the metric name, average value, and formatted display value
     """
-    # Get the specific row data
+    # get the specific row data
     row_data = get_metric_row(df, df2, df3, row_name, start_date, end_date)
     
     if row_data is None:
         return None
     
-    # Convert values to numeric (remove commas and % signs)
+    # convert values to numeric (remove commas and % signs)
     numeric_values = []
     for value in row_data:
         try:
-            # Remove commas and % signs, then convert to float
+            # remove commas and % signs, then convert to float
             clean_value = str(value).replace(',', '').replace('%', '')
             numeric_values.append(float(clean_value))
         except (ValueError, TypeError):
@@ -1077,10 +1085,10 @@ def create_average_kpi_card(df, df2, df3, row_name, start_date=None, end_date=No
     if not numeric_values:
         return None
     
-    # Calculate average
+    # calculate average
     avg_value = sum(numeric_values) / len(numeric_values)
     
-    # Format the display value based on metric type
+    # format the display value based on metric type
     percentage_metrics = ['Broker % of Net', 'Direct % of Net', 'Partner % of Net', 'Utilization Percentage']
     
     if row_name in percentage_metrics:
@@ -1118,17 +1126,17 @@ def create_sum_kpi_card(df, df2, df3, row_name, start_date=None, end_date=None):
     --------
     dict: Contains the metric name, sum value, and formatted display value
     """
-    # Get the specific row data
+    # get the specific row data
     row_data = get_metric_row(df, df2, df3, row_name, start_date, end_date)
     
     if row_data is None:
         return None
     
-    # Convert values to numeric (remove commas and % signs)
+    # convert values to numeric (remove commas and % signs)
     numeric_values = []
     for value in row_data:
         try:
-            # Remove commas and % signs, then convert to float
+            # remove commas and % signs, then convert to float
             clean_value = str(value).replace(',', '').replace('%', '')
             numeric_values.append(float(clean_value))
         except (ValueError, TypeError):
@@ -1137,14 +1145,13 @@ def create_sum_kpi_card(df, df2, df3, row_name, start_date=None, end_date=None):
     if not numeric_values:
         return None
     
-    # Calculate sum
+    # calculate sum
     sum_value = sum(numeric_values)
     
-    # Format the display value based on metric type
+    # format the display value based on metric type
     percentage_metrics = ['Broker % of Net', 'Direct % of Net', 'Partner % of Net', 'Utilization Percentage']
     
     if row_name in percentage_metrics:
-        # For percentages, sum might not make sense, but we'll format it anyway
         formatted_value = f"{sum_value:.0f}%"
     else:
         formatted_value = f"{sum_value:,.0f}"
@@ -1181,7 +1188,7 @@ def create_kpi_cards(df, df2, df3, metric_type, start_date=None, end_date=None, 
     --------
     dict: Contains metric cards data
     """
-    # Map metric types to row names
+    # map metric types to row names
     metric_mapping = {
         'net': 'Net Amount',
         'payments': 'Payments', 
@@ -1196,7 +1203,7 @@ def create_kpi_cards(df, df2, df3, metric_type, start_date=None, end_date=None, 
     if not row_name:
         return None
     
-    # Get the main metric cards
+    # get the main metric cards
     avg_card = create_average_kpi_card(df, df2, df3, row_name, start_date, end_date)
     sum_card = create_sum_kpi_card(df, df2, df3, row_name, start_date, end_date)
     
@@ -1206,13 +1213,13 @@ def create_kpi_cards(df, df2, df3, metric_type, start_date=None, end_date=None, 
         'broker_breakdown': None
     }
     
-    # Add broker breakdown if requested and metric is 'net'
+    # add broker breakdown if requested and metric is 'net'
     if show_broker and metric_type == 'net':
         broker_cards = {}
         broker_types = ['Broker', 'Direct', 'Partner']
         
+        # for net amount, we need to use the broker-specific row names
         for broker in broker_types:
-            # For net amount, we need to use the broker-specific row names
             broker_net_row = f'{broker} Net Amount'
             broker_pct_row = f'{broker} % of Net'
             

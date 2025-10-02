@@ -11,7 +11,7 @@ from src.visualization import (
     create_kpi_cards
 )
 
-# Load data
+# load data
 sales_pipeline, invoices, payments, time_reporting, start_date, end_date = load_process_and_store()
 
 # global date filter 
@@ -88,7 +88,7 @@ financial_trend_line_bool = (financial_trend_line == "Yes")
 
 # KPI Cards section
 #st.markdown("#### Financial trend") 
-st.subheader("Financial trend") 
+st.subheader("Financial") 
 st.write(f"Showing {amount_type} amount from {selected_start_month} to {selected_end_month}")
 st.markdown("---")
 
@@ -105,7 +105,6 @@ kpi_data = create_kpi_cards(
 
 if kpi_data:
     if not show_broker_bool:
-        # Show simple 2-column layout for main metrics
         col1, col2, col3 = st.columns(3)
         with col1:
             if kpi_data['main_avg']:
@@ -123,24 +122,24 @@ if kpi_data:
             # placeholder to maintain layout
             st.metric(label="", value="")  
     else:
-        # Show broker breakdown - use consistent 3-column layout
-        col1, col2, col3 = st.columns(3)
+        # show broker breakdown
+    #    col1, col2, col3 = st.columns(3)
         
-        with col1:
-            if kpi_data['main_avg']:
-                st.metric(
-                    label="Average Net Amount", 
-                    value=kpi_data['main_avg']['formatted_value']
-                )
-        with col2:
-            if kpi_data['main_sum']:
-                st.metric(
-                    label="Total Net Amount", 
-                    value=kpi_data['main_sum']['formatted_value']
-                )
-        with col3:
+    #    with col1:
+    #        if kpi_data['main_avg']:
+    #            st.metric(
+    #                label="Average Net Amount", 
+    #                value=kpi_data['main_avg']['formatted_value']
+    #           )
+    #    with col2:
+    #        if kpi_data['main_sum']:
+    #            st.metric(
+    #                label="Total Net Amount", 
+    #                value=kpi_data['main_sum']['formatted_value']
+    #            )
+    #    with col3:
             # placeholder to maintain layout
-            st.metric(label="", value="")  
+    #        st.metric(label="", value="")  
                 
         # Create tabs for each broker type
         tab1, tab2, tab3 = st.tabs(["Broker", "Direct", "Partner"])

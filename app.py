@@ -135,8 +135,8 @@ table_rows_bool = (table_rows == "Yes")
 #hourly_trend_line_bool = (hourly_trend_line == "Yes")
 
 # dashboard table 
-st.markdown("#### Key Metrics") 
-st.caption(f"Showing KPIs from {selected_start_month} to {selected_end_month}")
+st.subheader("Key Metrics") 
+st.write(f"Showing KPIs from {selected_start_month} to {selected_end_month}")
 st.markdown("---")
 
 financial_data = key_metrics_monthly(invoices, payments, time_reporting, start_date=start_date_str, end_date=end_date_str)
