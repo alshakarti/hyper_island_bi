@@ -68,10 +68,10 @@ end_date_obj = get_month_end_date(end_date_obj)
 end_date_str = end_date_obj.strftime('%Y-%m-%d')
 
 trend_color = st.sidebar.selectbox(
-    "Highlight MoM Trend",
+    "Above / below target highlight",
     options=["Yes", "No"],
     index=0,
-    help="Show green color for MoM increase and red color for MoM decrease"
+    help="Show green color if metric is at or above target and red color if metric is below target"
 )
 trend_color_bool = (trend_color == "Yes")
 
