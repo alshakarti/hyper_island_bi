@@ -9,6 +9,7 @@ from src.data_processing import (
 from src.visualization import (
     key_metrics_monthly,
     highlight_revenue_trend,
+    plot_net_amount_mom_growth,
 )
 # customizing the page
 st.set_page_config(
@@ -116,9 +117,6 @@ else:
 filtered_financial_data = financial_data.loc[
     [row for row in desired_rows if row in financial_data.index]
 ]
-#styled_financial_data = filtered_financial_data.style.apply(
-#    lambda row: highlight_revenue_trend(row, color=trend_color_bool), axis=1
-#)
 
 styled_financial_data = filtered_financial_data.style.apply(
     lambda row: highlight_revenue_trend(row, pivot_df=filtered_financial_data, color=trend_color_bool),
@@ -130,3 +128,18 @@ st.dataframe(
     use_container_width=True,
     hide_index=False
 )
+
+# net Amount MoM growth
+growth_fig = plot_net_amount_mom_growth(
+    invoices,
+    payments,
+    time_reporting,
+    start_date=start_date_str,
+    end_date=end_date_str,
+    show_required_line=trend_color_bool,
+    first_month_as_zero=True 
+)
+
+#st.subheader("MoM growth rate") 
+if growth_fig:
+    st.plotly_chart(growth_fig, use_container_width=True)

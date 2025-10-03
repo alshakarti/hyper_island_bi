@@ -385,3 +385,226 @@ def highlight_revenue_trend(row, color=True):
             styles.append('')
     return styles
 
+
+def plot_net_amount_mom_growth(invoices_df, payments_df, time_df, start_date=None, end_date=None):
+    """
+    Line chart of Month-over-Month % growth for Net Amount (invoiced).
+    MoM % = (Current - Previous) / Previous * 100
+    First month shows no value (None).
+    """
+    pivot = key_metrics_monthly(invoices_df, payments_df, time_df,
+                                start_date=start_date, end_date=end_date)
+    if pivot.empty or 'Net Amount' not in pivot.index:
+        return None
+
+    net_row = pivot.loc['Net Amount']  # Series indexed by month labels like 'Jan 2024', 'Feb 2024'
+
+    def to_number(v):
+        try:
+            return float(str(v).replace(',', '').replace('%', '').strip())
+        except Exception:
+            return 0.0
+
+    net_numeric = net_row.map(to_number)
+
+    # Build DataFrame robustly regardless of Series name
+    df = net_numeric.reset_index()
+    # After reset_index, columns are usually ['index', 'Net Amount'] OR ['index', 0]
+    if len(df.columns) != 2:
+        return None  # unexpected shape
+    df.columns = ['MonthLabel', 'NetAmount']
+
+    # Parse month labels to datetime
+    df['Month_dt'] = pd.to_datetime(df['MonthLabel'], format='%b %Y', errors='coerce')
+    # If parsing failed (maybe original labels still 'YYYY-MM'), try alternative
+    if df['Month_dt'].isna().all():
+        df['Month_dt'] = pd.to_datetime(df['MonthLabel'] + '-01', format='%Y-%m-%d', errors='coerce')
+
+    # Drop rows we cannot parse
+    df = df.dropna(subset=['Month_dt']).sort_values('Month_dt')
+
+    if df.empty:
+        return None
+
+    df['MoM_Growth_Pct'] = df['NetAmount'].pct_change() * 100
+    if not df.empty:
+        first_idx = df.index.min()
+        df.loc[first_idx, 'MoM_Growth_Pct'] = None  # suppress first month growth
+
+    fig = px.line(
+        df,
+        x='Month_dt',
+        y='MoM_Growth_Pct',
+        markers=True,
+        labels={'Month_dt': 'Month', 'MoM_Growth_Pct': 'MoM Growth % (Net Amount)'}
+    )
+
+    fig.update_traces(
+        hovertemplate=(
+            'Month: %{x|%b %Y}<br>'
+            'MoM Growth: %{y:.1f}%<br>'
+            'Net Amount: %{customdata[0]:,.0f} SEK'
+        ),
+        customdata=df[['NetAmount']].values
+    )
+
+    # 15% MoM growth target
+    fig.add_hline(y=15, line_color='orange', line_dash='dash')
+    
+    # Optional: limit y-axis if extreme swings
+    if df['MoM_Growth_Pct'].notna().any():
+        q1 = df['MoM_Growth_Pct'].quantile(0.05)
+        q9 = df['MoM_Growth_Pct'].quantile(0.95)
+        span = max(abs(q1), abs(q9))
+        if not np.isnan(span) and span > 0:
+            fig.update_yaxes(range=[-1.2 * span, 1.2 * span])
+
+    fig.update_layout(
+        xaxis=dict(tickformat='%b %Y'),
+        yaxis=dict(title='MoM Growth %'),
+        height=350,
+        margin=dict(l=40, r=20, t=50, b=40)
+    )
+    return fig
+
+def plot_net_amount_mom_growth2(invoices_df, payments_df, time_df,
+                               start_date=None, end_date=None,
+                               annual_target=20_000_000,
+                               use_remaining_months=True):
+    """
+    Line chart of:
+      - Actual Month-over-Month % Growth for Net Amount
+      - Required MoM Growth % to reach annual target (dynamic each month)
+
+    Required MoM Growth % (per user formula):
+        remaining_net = annual_target - cumulative_net_to_date
+        required_avg_remaining = remaining_net / 12   (user-specified)
+        required_growth = (required_avg_remaining / current_month_net) - 1
+
+    If use_remaining_months=True (recommended alternative):
+        required_avg_remaining = remaining_net / remaining_months_in_year (>=1)
+
+    Parameters:
+      annual_target: int
+      use_remaining_months: bool -> switch formula denominator
+
+    Returns:
+      plotly Figure or None
+    """
+    pivot = key_metrics_monthly(invoices_df, payments_df, time_df,
+                                start_date=start_date, end_date=end_date)
+    if pivot.empty or 'Net Amount' not in pivot.index:
+        return None
+
+    net_row = pivot.loc['Net Amount']
+
+    def to_number(v):
+        try:
+            return float(str(v).replace(',', '').replace('%', '').strip())
+        except Exception:
+            return 0.0
+
+    net_numeric = net_row.map(to_number)
+
+    df = net_numeric.reset_index()
+    if len(df.columns) != 2:
+        return None
+    df.columns = ['MonthLabel', 'NetAmount']
+
+    # Parse month labels (first try 'Mon YYYY', fallback 'YYYY-MM')
+    df['Month_dt'] = pd.to_datetime(df['MonthLabel'], format='%b %Y', errors='coerce')
+    if df['Month_dt'].isna().all():
+        df['Month_dt'] = pd.to_datetime(df['MonthLabel'] + '-01', format='%Y-%m-%d', errors='coerce')
+
+    df = df.dropna(subset=['Month_dt']).sort_values('Month_dt')
+    if df.empty:
+        return None
+
+    # Actual MoM Growth %
+    df['MoM_Growth_Pct'] = df['NetAmount'].pct_change() * 100
+    first_idx = df.index.min()
+    df.loc[first_idx, 'MoM_Growth_Pct'] = None
+
+    # Focus target on the latest year present
+    df['Year'] = df['Month_dt'].dt.year
+    target_year = df['Year'].max()
+
+    # Calculate cumulative net within target year
+    year_mask = df['Year'] == target_year
+    df.loc[year_mask, 'CumulativeNet'] = df.loc[year_mask].sort_values('Month_dt')['NetAmount'].cumsum()
+
+    # Required growth calculation
+    required_growth_values = []
+    for idx, row in df.iterrows():
+        if row['Year'] != target_year:
+            required_growth_values.append(None)
+            continue
+        cumulative_net = row['CumulativeNet']
+        current_net = row['NetAmount']
+        remaining_net = annual_target - cumulative_net
+        if remaining_net <= 0 or current_net <= 0:
+            required_growth_values.append(0.0)
+            continue
+
+        if use_remaining_months:
+            month_number = row['Month_dt'].month  # 1..12
+            remaining_months_in_year = max(12 - month_number, 1)
+            required_avg_remaining = remaining_net / remaining_months_in_year
+        else:
+            # User-specified approach: divide by 12 (constant)
+            required_avg_remaining = remaining_net / 12.0
+
+        required_growth = (required_avg_remaining / current_net) - 1
+        required_growth_values.append(required_growth * 100)  # to %
+    df['Required_MoM_Growth_Pct'] = required_growth_values
+
+    # Build figure
+    fig = go.Figure()
+
+    # Actual growth
+    fig.add_trace(
+        go.Scatter(
+            x=df['Month_dt'],
+            y=df['MoM_Growth_Pct'],
+            mode='lines+markers',
+            name='Actual MoM Growth %',
+            line=dict(color='#1f77b4', width=2),
+            hovertemplate='Month: %{x|%b %Y}<br>Actual: %{y:.1f}%<br>Net: %{customdata[0]:,.0f} SEK<extra></extra>',
+            customdata=np.stack([df['NetAmount']], axis=-1)
+        )
+    )
+
+    # Required growth
+    fig.add_trace(
+        go.Scatter(
+            x=df['Month_dt'],
+            y=df['Required_MoM_Growth_Pct'],
+            mode='lines+markers',
+            name='Required MoM Growth % to hit target of 20M SEK',
+            line=dict(color='orange', width=2, dash='dash'),
+            hovertemplate='Month: %{x|%b %Y}<br>Required: %{y:.1f}%<br>Cumulative Net: %{customdata[0]:,.0f} SEK<extra></extra>',
+            customdata=np.stack([df['CumulativeNet'].fillna(0)], axis=-1)
+        )
+    )
+
+    # Zero line
+    fig.add_hline(y=0, line_color='lightgray', line_dash='dash')
+
+    # Dynamic y-range
+    combined = pd.concat([
+        df['MoM_Growth_Pct'].dropna(),
+        df['Required_MoM_Growth_Pct'].dropna()
+    ])
+    if not combined.empty:
+        max_abs = combined.abs().quantile(0.95)
+        if max_abs > 0:
+            fig.update_yaxes(range=[-1.2 * max_abs, 1.2 * max_abs])
+
+    fig.update_layout(
+        xaxis=dict(title='Month', tickformat='%b %Y'),
+        yaxis=dict(title='MoM Growth % to hit target'),
+        height=350,
+        legend=dict(orientation='h', y=1.12, x=0),
+        margin=dict(l=50, r=20, t=90, b=40)
+    )
+    return fig

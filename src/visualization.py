@@ -434,8 +434,7 @@ def plot_invoice_amounts(df, df2=None, start_date=None, end_date=None, amount_ty
     fig.update_layout(
         xaxis_title='Month',
         yaxis_title=f'{amount_title} (SEK)',
-        height=500,
-        width=900,
+        height=400,
         xaxis={'categoryorder': 'category ascending'}
     )
     return fig
@@ -641,7 +640,7 @@ def plot_invoice_amounts_line(df, df2=None, start_date=None, end_date=None, amou
     fig.update_layout(
         xaxis_title='Month',
         yaxis_title=f'{amount_title} (SEK)',
-        height=430,
+        height=400,
    
         xaxis={'categoryorder': 'category ascending'}
     )
@@ -751,7 +750,7 @@ def plot_monthly_hours(df_time, start_date=None, end_date=None, hours_type='tota
     fig.update_layout(
         xaxis_title='Month',
         yaxis_title=y_axis_title,
-        height=430,
+        height=400,
         xaxis={'categoryorder': 'category ascending'}
     )
     return fig
@@ -871,7 +870,7 @@ def plot_monthly_hours_line(df_time, start_date=None, end_date=None, hours_type=
         fig.update_layout(
             xaxis_title='Month',
             yaxis_title=y_axis_title,
-            height=430,
+            height=400,
             xaxis={'categoryorder': 'category ascending'},
             yaxis={'range': [0, 100]}  # Fix y-axis range for utilization
         )
@@ -879,7 +878,7 @@ def plot_monthly_hours_line(df_time, start_date=None, end_date=None, hours_type=
         fig.update_layout(
             xaxis_title='Month',
             yaxis_title=y_axis_title,
-            height=430,
+            height=400,
             xaxis={'categoryorder': 'category ascending'}
         )
     
@@ -1111,3 +1110,156 @@ def create_kpi_cards(df, df2, df3, metric_type, start_date=None, end_date=None, 
         result['broker_breakdown'] = broker_cards
     
     return result
+
+# plot percentage increase/decrease in net amount month over month, with a dynamic target line that shows required increase/decrease to hit 20m end of year
+def plot_net_amount_mom_growth(invoices_df, payments_df, time_df,
+                                start_date=None, end_date=None,
+                                annual_target=20_000_000,
+                                use_remaining_months=True,
+                                show_required_line=True,
+                                show_first_month=True,
+                                first_month_as_zero=True):
+    """
+    Net Amount Month-over-Month Growth vs (optional) Required Growth line.
+
+    New params:
+      show_first_month: keep the first selected month visible on the chart
+      first_month_as_zero: if True, set first month's MoM growth to 0%
+                           (otherwise keep it as None which hides the point)
+
+    """
+    pivot = key_metrics_monthly(invoices_df, payments_df, time_df,
+                                start_date=start_date, end_date=end_date)
+    if pivot.empty or 'Net Amount' not in pivot.index:
+        return None
+
+    net_row = pivot.loc['Net Amount']
+
+    def to_number(v):
+        try:
+            return float(str(v).replace(',', '').replace('%', '').strip())
+        except Exception:
+            return 0.0
+
+    net_numeric = net_row.map(to_number)
+
+    df = net_numeric.reset_index()
+    if len(df.columns) != 2:
+        return None
+    df.columns = ['MonthLabel', 'NetAmount']
+
+    # Parse month formats
+    df['Month_dt'] = pd.to_datetime(df['MonthLabel'], format='%b %Y', errors='coerce')
+    if df['Month_dt'].isna().all():
+        df['Month_dt'] = pd.to_datetime(df['MonthLabel'] + '-01', format='%Y-%m-%d', errors='coerce')
+
+    df = df.dropna(subset=['Month_dt']).sort_values('Month_dt')
+    if df.empty:
+        return None
+
+    # Actual MoM growth
+    df['MoM_Growth_Pct'] = df['NetAmount'].pct_change() * 100
+
+    # Handle first month visibility
+    first_idx = df.index.min()
+    if show_first_month:
+        if first_month_as_zero:
+            df.loc[first_idx, 'MoM_Growth_Pct'] = 0.0
+        else:
+            # keep None so point would be hidden
+            df.loc[first_idx, 'MoM_Growth_Pct'] = None
+    else:
+        # If explicitly not showing, remove first row (rare use case)
+        df = df.loc[df.index != first_idx]
+
+    # required growth line (optional)
+    if show_required_line:
+        df['Year'] = df['Month_dt'].dt.year
+        target_year = df['Year'].max()
+        year_mask = df['Year'] == target_year
+        df.loc[year_mask, 'CumulativeNet'] = (
+            df.loc[year_mask].sort_values('Month_dt')['NetAmount'].cumsum()
+        )
+
+        req_vals = []
+        for _, row in df.iterrows():
+            if row.get('Year') != target_year:
+                req_vals.append(None)
+                continue
+            cumulative_net = row.get('CumulativeNet')
+            current_net = row['NetAmount']
+            if cumulative_net is None or current_net <= 0:
+                req_vals.append(None)
+                continue
+            remaining_net = annual_target - cumulative_net
+            if remaining_net <= 0:
+                req_vals.append(0.0)
+                continue
+
+            if use_remaining_months:
+                month_number = row['Month_dt'].month
+                remaining_months = max(12 - month_number, 1)
+                required_avg_remaining = remaining_net / remaining_months
+            else:
+                required_avg_remaining = remaining_net / 12.0
+
+            req_growth = (required_avg_remaining / current_net) - 1
+            req_vals.append(req_growth * 100)
+        df['Required_MoM_Growth_Pct'] = req_vals
+    
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=df['Month_dt'],
+            y=df['MoM_Growth_Pct'],
+            mode='lines+markers',
+            name='Actual MoM Growth %',
+            line=dict(color='#1f77b4', width=2),
+            hovertemplate=(
+                'Month: %{x|%b %Y}<br>'
+                'Actual: %{y:.1f}%<br>'
+                'Net: %{customdata[0]:,.0f} SEK<extra></extra>'
+            ),
+            customdata=np.stack([df['NetAmount']], axis=-1)
+        )
+    )
+
+    if show_required_line and 'Required_MoM_Growth_Pct' in df.columns:
+        fig.add_trace(
+            go.Scatter(
+                x=df['Month_dt'],
+                y=df['Required_MoM_Growth_Pct'],
+                mode='lines+markers',
+                name='Required MoM Growth % to hit target of 20M SEK',
+                line=dict(color='orange', width=2, dash='dash'),
+                hovertemplate=(
+                    'Month: %{x|%b %Y}<br>'
+                    'Required: %{y:.1f}%<br>'
+                    'Cumulative Net: %{customdata[0]:,.0f} SEK<extra></extra>'
+                ),
+                customdata=np.stack([df.get('CumulativeNet', df['NetAmount'].cumsum())], axis=-1)
+            )
+        )
+
+    fig.add_hline(y=0, line_color='lightgray', line_dash='dash')
+
+    # dynamic y-range
+    series = [df['MoM_Growth_Pct'].dropna()]
+    if show_required_line and 'Required_MoM_Growth_Pct' in df.columns:
+        series.append(df['Required_MoM_Growth_Pct'].dropna())
+    combined = pd.concat(series) if series else pd.Series(dtype=float)
+    if not combined.empty:
+        span = combined.abs().quantile(0.95)
+        if span > 0:
+            fig.update_yaxes(range=[-1.2 * span, 1.2 * span])
+
+    fig.update_layout(
+        xaxis=dict(title='Month', tickformat='%b %Y'),
+        yaxis=dict(title='MoM Growth %'),
+        legend=dict(orientation='h', y=1.1, x=0),
+        height=300,
+        margin=dict(l=50, r=20, t=60, b=40)
+    )
+
+    return fig
