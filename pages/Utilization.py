@@ -17,6 +17,27 @@ import plotly.express as px
 # load data
 sales_pipeline, invoices, payments, time_reporting, start_date, end_date, monthly_totals = load_process_and_store()
 
+# ------------------ deterministic employee-id normalization ------------------
+def _normalize_emp_id(val):
+    """Normalize employee id to a stable string or None."""
+    if pd.isna(val):
+        return None
+    s = str(val).strip()
+    if s == "" or s.lower() in {"nan", "none"}:
+        return None
+    try:
+        f = float(s)
+        if f.is_integer():
+            return str(int(f))
+    except Exception:
+        pass
+    return s
+
+# create a normalized column for deterministic counting (used across the page)
+time_reporting = time_reporting.copy()
+time_reporting['employee_id_norm'] = time_reporting['employee_id'].apply(_normalize_emp_id)
+# ------------------------------------------------------------------------------
+
 # global date filter 
 st.sidebar.subheader("Filter")
 
@@ -197,7 +218,7 @@ monthly_agg = df.groupby(['month', 'seniority']).agg(
     billable_hours=('billable_hours', 'sum'),
     non_billable_hours=('non_billable_hours', 'sum'),
     total_hours=('total_hours', 'sum'),
-    consultant_count=('employee_id', lambda x: x.dropna().nunique())
+    consultant_count=('employee_id_norm', lambda x: x.dropna().nunique())
 ).reset_index()
 
 # Utilization percentage (handle divide-by-zero)
@@ -311,7 +332,12 @@ else:
         else:
             capacity = 0
 
-        total_consultants = int(capacity // 160) if capacity else 0
+        # Prefer using the actual consultants_active mean (rounded) for the "Total Consultants" KPI
+        if 'consultants_active' in filtered.columns and filtered['consultants_active'].notna().any():
+            total_consultants = int(round(filtered['consultants_active'].mean()))
+        else:
+            # fallback: derive from capacity; use rounding to avoid floor undercount
+            total_consultants = int(round(capacity / 160)) if capacity else 0
 
         # compute previous-period sums to show percentage deltas (if available)
         try:
@@ -503,6 +529,9 @@ if not df.empty:
     k4.metric('Billable utilization', f"{util_avg}%")
 
     # warn if detected active consultants fewer than expected
-    total_active_consultants = int(df['employee_id'].dropna().nunique())
+    # Count using normalized employee ids to avoid float/int mismatch (e.g. 2.0 vs 2)
+    if 'employee_id_norm' not in df.columns:
+        df['employee_id_norm'] = df['employee_id'].apply(_normalize_id)
+    total_active_consultants = int(df['employee_id_norm'].dropna().nunique())
     if total_active_consultants < 10:
         st.warning(f"Detected {total_active_consultants} active consultants in the filtered data. You mentioned there should be at least 10 — please check employee_id mapping or data sources.")
