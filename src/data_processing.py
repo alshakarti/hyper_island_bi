@@ -344,6 +344,12 @@ def load_process_and_store():
         st.session_state.invoices = invoices
         st.session_state.payments = payments
         st.session_state.time_reporting = time_reporting
+        # store employees dataframe (df6) for use in pages that need a canonical employee list
+        try:
+            st.session_state.employees = df6
+        except NameError:
+            # if df6 isn't present, set to None (the loader will have printed available files)
+            st.session_state.employees = None
         st.session_state.start_date = start_date
         st.session_state.end_date = end_date
         st.session_state.data_loaded = True
