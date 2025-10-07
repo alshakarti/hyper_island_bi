@@ -175,109 +175,29 @@ else:
     st.warning("No hours data available for the selected filters.")
 
 
+# 'Utilization by Seniority' section removed per user request.
 
-
-st.header("Utilization by Seniority (Proof of Concept)")
-st.caption(" Demo only: Employees need to be  manually or evenly assigned to seniority tiers (K1–K4).")
-
-
-# --- Manual mapping (replace with real IDs if you want) ---
-manual_map = {
-    # "1234": "K1 Junior",
-    # "5678": "K2 Consultant",
-    # "9012": "K3 Senior",
-    # "3456": "K4 Partner"
-}
-
+# Prepare base dataframe and monthly aggregations from time_reporting
 df = time_reporting.copy()
-df['seniority'] = df['employee_id'].map(manual_map)
-
-# Auto-assign if mapping empty
-if df['seniority'].isna().all():
-    unique_ids = df['employee_id'].dropna().unique()
-    tiers = ["K1 Junior", "K2 Consultant", "K3 Senior", "K4 Partner"]
-    mapping_auto = {eid: tiers[i % 4] for i, eid in enumerate(unique_ids)}
-    df['seniority'] = df['employee_id'].map(mapping_auto)
-
-# --- Apply Date Filter ---
 df['date'] = pd.to_datetime(df['date'])
-# use normalized timestamps for comparisons
+# apply selected date filter
 df = df[(df['date'] >= start_dt) & (df['date'] <= end_dt)]
-
-# --- Aggregate monthly hours ---
 df['month'] = df['date'].dt.to_period('M')
-
-# Ensure billable/non_billable columns exist
+# ensure columns exist
 if 'billable_hours' not in df.columns:
     df['billable_hours'] = 0.0
 if 'non_billable_hours' not in df.columns:
     df['non_billable_hours'] = 0.0
+if 'total_hours' not in df.columns:
+    df['total_hours'] = df['billable_hours'] + df['non_billable_hours']
 
-# Aggregate sums and count unique consultants per month/seniority
-monthly_agg = df.groupby(['month', 'seniority']).agg(
+# aggregated monthly hours (company-level)
+monthly_hours = df.groupby('month').agg(
     billable_hours=('billable_hours', 'sum'),
     non_billable_hours=('non_billable_hours', 'sum'),
     total_hours=('total_hours', 'sum'),
-    consultant_count=('employee_id_norm', lambda x: x.dropna().nunique())
+    consultant_count=('employee_id', lambda x: x.dropna().nunique())
 ).reset_index()
-
-# Utilization percentage (handle divide-by-zero)
-monthly_agg['utilization_pct'] = (
-    (monthly_agg['billable_hours'] / monthly_agg['total_hours'])
-    .replace([np.inf, -np.inf], 0)
-    .fillna(0) * 100
-)
-
-# Capacity per consultant: assume 160 working hours per month
-monthly_agg['consultant_hours_total'] = monthly_agg['consultant_count'] * 160
-
-monthly_hours = monthly_agg
-
-# --- KPI Cards (last 3 months) ---
-if not monthly_hours.empty:
-    latest_months = monthly_hours['month'].unique()[-3:]
-    avg_hours = (
-        monthly_hours[monthly_hours['month'].isin(latest_months)]
-        .groupby('seniority')['total_hours'].mean()
-        .round(0)
-    )
-    st.subheader("Average Hours (last 3 months)")
-    cols = st.columns(len(avg_hours))
-    for col, (tier, value) in zip(cols, avg_hours.items()):
-        col.metric(label=tier, value=f"{int(value)} hrs")
-
-# --- Chart ---
-if not monthly_hours.empty:
-    color_map = {
-        "K1 Junior": "#773344",
-        "K2 Consultant": "#E3B5A4",
-        "K3 Senior": "#D44D5C",
-        "K4 Partner": "#0B0014",
-        "Unmapped": "#F5E9E2"
-    }
-
-    fig = px.bar(
-        monthly_hours,
-        x=monthly_hours['month'].astype(str),
-        y="total_hours",
-        color="seniority",
-        barmode="stack",
-        color_discrete_map=color_map,
-        labels={"total_hours": "Total Hours", "month": "Month", "seniority": "Seniority Level"},
-        title=f"Hours by Seniority ({selected_start_month} → {selected_end_month})"
-    )
-
-    fig.update_layout(
-        height=500,
-        width=900,
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        font=dict(size=14)
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.warning("No data available for selected period.")
 
 # --- Simplified KPI Cards for Utilization ---
 st.subheader("Key Utilization KPIs")
@@ -299,7 +219,19 @@ else:
         # Try to recover consultant counts if present
         if 'consultant_count' in monthly_hours.columns:
             tmp['consultants_active'] = monthly_hours.groupby('month')['consultant_count'].sum().values
-        company_monthly = tmp
+            # compute capacity and optional min-10 override
+            if 'consultants_active' in tmp.columns:
+                tmp['capacity'] = tmp['consultants_active'] * 160
+            else:
+                # fallback: if consultant_count exists, use it
+                tmp['capacity'] = tmp.get('consultant_count', 0) * 160
+
+            if use_min_10_bool:
+                tmp['capacity_with_min10'] = tmp['capacity'].where(tmp['capacity'] >= 10 * 160, 10 * 160)
+            else:
+                tmp['capacity_with_min10'] = tmp['capacity']
+
+            company_monthly = tmp
 
 if company_monthly is None or company_monthly.empty:
     st.warning("No utilization data for selected period.")
@@ -314,11 +246,18 @@ else:
         total_hours = filtered['total_hours'].sum()
         billable_hours = filtered.get('billable_hours', filtered['total_hours']).sum()
 
-        # utilization percent: prefer precomputed, else compute
-        if 'utilization_pct' in filtered.columns:
-            avg_utilization = filtered['utilization_pct'].mean().round(1)
-        else:
-            avg_utilization = round((filtered['billable_hours'] / filtered['total_hours']).replace([np.inf, -np.inf], 0).fillna(0).mean() * 100, 1)
+        # utilization percent: compute as overall billable / total across the selected range
+        # (more accurate for KPI than averaging per-month percentages)
+        try:
+            total_hours_sum = filtered['total_hours'].sum()
+            billable_hours_sum = filtered.get('billable_hours', filtered['total_hours']).sum()
+            if total_hours_sum > 0:
+                avg_utilization = round((billable_hours_sum / total_hours_sum) * 100, 1)
+            else:
+                avg_utilization = 0.0
+        except Exception:
+            # fallback to safe default
+            avg_utilization = 0.0
 
         # capacity: look for capacity fields, fallback to consultants_active * 160
         if 'consultant_hours_total' in filtered.columns:
@@ -338,6 +277,10 @@ else:
         else:
             # fallback: derive from capacity; use rounding to avoid floor undercount
             total_consultants = int(round(capacity / 160)) if capacity else 0
+
+        # Enforce minimum consultants if the toggle is enabled
+        if use_min_10_bool and total_consultants < 10:
+            total_consultants = 10
 
         # compute previous-period sums to show percentage deltas (if available)
         try:
@@ -374,25 +317,125 @@ else:
         capacity_delta = _pct_change(capacity, prev_capacity) if prev_capacity else None
         consultants_delta = _pct_change(total_consultants, prev_consultants) if prev_consultants else None
 
-        # render KPI metrics with numeric deltas so Streamlit displays the colored delta badge
-        col1, col2, col3, col4, col5 = st.columns(5)
-        period_label = f"vs previous {n_months} month(s)"
-
-        with col1:
-            # total_hours: shown as integer, delta as percent (numeric) for coloring
-            col1.metric("Total Hours", f"{int(total_hours):,}", total_delta if total_delta is not None else None, help=f"Sum of hours in selected range ({period_label})")
-        with col2:
-            col2.metric("Billable Hours", f"{int(billable_hours):,}", billable_delta if billable_delta is not None else None, help=f"Sum of billable hours in selected range ({period_label})")
-        with col3:
-            # utilization: value as string with % sign, delta as percent points (numeric)
-            col3.metric("Utilization %", f"{avg_utilization}%", util_delta if util_delta is not None else None, help=f"Average billable% across months ({period_label})")
-        with col4:
-            col4.metric("Capacity (hrs)", f"{int(capacity):,}", capacity_delta if capacity_delta is not None else None, help=f"Average capacity in hrs ({period_label})")
-        with col5:
-            col5.metric("Total Consultants", f"{total_consultants}", consultants_delta if consultants_delta is not None else None, help=f"Estimated total consultants (capacity/160) ({period_label})")
+        # NOTE: KPI metrics will be rendered above the monthly charts so they visually belong together.
+        # The numeric values are computed here and the rendering is deferred until the chart section.
 
 
 # --- Company-level monthly summaries & charts (Total hours, Work hours structure, Utilization) ---
+# -----------------------------------------------------------------------------
+# Hours by Seniority (prefer auto-filled mapping; fallback to notion mapping)
+# -----------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("Hours by Seniority")
+try:
+    import os
+    # prefer the canonical name if present, fall back to a zz_ prefixed file created by the tooling
+    candidate_paths = [
+        os.path.join('data', 'consultant_user_mapping.auto_filled.csv'),
+        os.path.join('data', 'zz_consultant_user_mapping.auto_filled.csv')
+    ]
+    auto_map_path = next((p for p in candidate_paths if os.path.exists(p)), candidate_paths[0])
+    hr_path = os.path.join('data', 'dim__notion_hr__anonymized.csv')
+    map_path = os.path.join('data', 'notion_to_employee_map.csv')
+
+    # working copy of filtered entries (df created earlier)
+    tr_sen = df.copy()
+
+    # ensure normalized id exists on entries
+    if 'employee_id_norm' not in tr_sen.columns:
+        tr_sen['employee_id_norm'] = tr_sen['employee_id'].apply(lambda v: str(int(v)) if pd.notna(v) and float(v).is_integer() else (str(v) if pd.notna(v) else None))
+
+    seniority_source = None
+    mapped_count = 0
+
+    # 1) Prefer auto-filled mapping if present
+    if os.path.exists(auto_map_path):
+        am = pd.read_csv(auto_map_path)
+        # detect available columns
+        if 'employee_id_norm' in am.columns and 'seniority' in am.columns:
+            am['employee_id_norm'] = am['employee_id_norm'].astype(str)
+            merged = tr_sen.merge(am[['employee_id_norm', 'seniority']], left_on='employee_id_norm', right_on='employee_id_norm', how='left')
+            seniority_source = 'auto.employee_id_norm'
+        elif 'employee_id' in am.columns and 'seniority' in am.columns:
+            am['employee_id_num'] = pd.to_numeric(am['employee_id'], errors='coerce')
+            tr_sen['employee_id_num'] = pd.to_numeric(tr_sen.get('employee_id'), errors='coerce')
+            merged = tr_sen.merge(am[['employee_id_num', 'seniority']], on='employee_id_num', how='left')
+            seniority_source = 'auto.employee_id'
+        else:
+            merged = tr_sen.copy()
+
+    # 2) fallback: notion -> hr mapping if auto-map not used or lacked columns
+    elif os.path.exists(hr_path) and os.path.exists(map_path):
+        hr = pd.read_csv(hr_path, usecols=['consultant_id', 'seniority'])
+        mapping = pd.read_csv(map_path, usecols=['notion_id', 'employee_id'])
+        merged_map = mapping.merge(hr, left_on='notion_id', right_on='consultant_id', how='left')
+        merged_map['employee_id_num'] = pd.to_numeric(merged_map['employee_id'], errors='coerce')
+        tr_sen['employee_id_num'] = pd.to_numeric(tr_sen.get('employee_id'), errors='coerce')
+        merged = tr_sen.merge(merged_map[['employee_id_num', 'seniority']], on='employee_id_num', how='left')
+        seniority_source = 'notion->hr'
+    else:
+        merged = tr_sen.copy()
+
+    # final cleanup
+    if 'seniority' in merged.columns:
+        merged['seniority'] = merged['seniority'].fillna('Unknown')
+        mapped_count = merged[merged['seniority'] != 'Unknown'].shape[0]
+    else:
+        merged['seniority'] = 'Unknown'
+
+    total_count = merged.shape[0]
+    coverage_pct = (mapped_count / total_count * 100) if total_count else 0
+
+    # aggregate hours by seniority
+    sen_agg = merged.groupby('seniority').agg(
+        billable_hours=('billable_hours', 'sum'),
+        non_billable_hours=('non_billable_hours', 'sum'),
+        total_hours=('total_hours', 'sum'),
+        entries=('date', 'count')
+    ).reset_index()
+
+    if sen_agg.empty:
+        st.info("No seniority-linked hours found for the selected date range.")
+    else:
+        sen_agg['util_pct'] = (sen_agg['billable_hours'] / sen_agg['total_hours']).replace([np.inf, -np.inf], 0).fillna(0) * 100
+
+        # diagnostics: show mapping coverage and top unmapped employee ids
+        c1, c2 = st.columns([2, 3])
+        with c1:
+            # show a concise prototype insight label with rounded percentage
+            pct_int = int(round(coverage_pct)) if total_count else 0
+            st.markdown(f"**Prototype insight — {pct_int}% of hours currently mapped to HR roles (K1–K4).**")
+            st.caption(f"Source: {seniority_source or 'none'}")
+        with c2:
+            unmapped = merged[merged['seniority'] == 'Unknown']
+            top_unmapped = unmapped['employee_id'].value_counts().head(8).rename_axis('employee_id').reset_index(name='count')
+            if not top_unmapped.empty:
+                st.markdown("**Top unmapped employee_id (sample)**")
+                st.dataframe(top_unmapped)
+
+        # show a stacked bar (billable vs non-billable)
+        try:
+            import plotly.express as px
+            sen_plot = px.bar(
+                sen_agg.sort_values('total_hours', ascending=False),
+                x='seniority',
+                y=['billable_hours', 'non_billable_hours'],
+                labels={'value': 'Hours', 'seniority': 'Seniority'},
+                title='Billable vs Non-billable hours by Seniority',
+                barmode='stack'
+            )
+            sen_plot.update_layout(showlegend=True)
+            st.plotly_chart(sen_plot, use_container_width=True)
+        except Exception:
+            st.dataframe(sen_agg)
+
+    # add a little vertical spacing so the seniorities header doesn't sit too close to the chart
+    st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
+    st.markdown("**Seniorities (top rows)**")
+    st.dataframe(sen_agg.sort_values('total_hours', ascending=False).round(2))
+except Exception as e:
+    st.warning(f"Could not compute hours by seniority: {e}")
+
 # Build a monthly summary across all seniorities for the selected date range
 if not df.empty:
     # monthly_summary grouped by month (Period)
@@ -456,6 +499,21 @@ if not df.empty:
     # format month labels
     monthly_summary['month_str'] = monthly_summary['month'].dt.to_timestamp().dt.strftime('%b')
 
+    # Render the Key Utilization KPIs above the monthly charts so they belong together visually
+    col1, col2, col3, col4, col5 = st.columns(5)
+    period_label = f"vs previous {n_months} month(s)"
+
+    with col1:
+        col1.metric("Total Hours", f"{int(total_hours):,}", total_delta if total_delta is not None else None, help=f"Sum of hours in selected range ({period_label})")
+    with col2:
+        col2.metric("Billable Hours", f"{int(billable_hours):,}", billable_delta if billable_delta is not None else None, help=f"Sum of billable hours in selected range ({period_label})")
+    with col3:
+        col3.metric("Utilization %", f"{avg_utilization}%", util_delta if util_delta is not None else None, help=f"Average billable% across months ({period_label})")
+    with col4:
+        col4.metric("Capacity (hrs)", f"{int(capacity):,}", capacity_delta if capacity_delta is not None else None, help=f"Average capacity in hrs ({period_label})")
+    with col5:
+        col5.metric("Total Consultants", f"{total_consultants}", consultants_delta if consultants_delta is not None else None, help=f"Estimated total consultants (capacity/160) ({period_label})")
+
     # Chart layout: three charts in a row
     c1, c2, c3 = st.columns(3)
 
@@ -515,23 +573,4 @@ if not df.empty:
         fig3.update_layout(yaxis=dict(title='Utilization %'), title='Billable utilization', height=420)
         st.plotly_chart(fig3, use_container_width=True)
 
-    # Show summary KPI cards (Total hours, Work hours, Billable hours, Utilization)
-    tot_hours = int(monthly_summary['total_hours'].sum())
-    work_hours = tot_hours
-    bill_hours = int(monthly_summary['billable_hours'].sum())
-    util_avg = round(monthly_summary['utilization_pct'].mean(), 1)
-
-    st.subheader('Company performance (selected range)')
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric('Total hours', f"{tot_hours:,}")
-    k2.metric('Work hours', f"{work_hours:,}")
-    k3.metric('Billable hours', f"{bill_hours:,}")
-    k4.metric('Billable utilization', f"{util_avg}%")
-
-    # warn if detected active consultants fewer than expected
-    # Count using normalized employee ids to avoid float/int mismatch (e.g. 2.0 vs 2)
-    if 'employee_id_norm' not in df.columns:
-        df['employee_id_norm'] = df['employee_id'].apply(_normalize_id)
-    total_active_consultants = int(df['employee_id_norm'].dropna().nunique())
-    if total_active_consultants < 10:
-        st.warning(f"Detected {total_active_consultants} active consultants in the filtered data. You mentioned there should be at least 10 — please check employee_id mapping or data sources.")
+    # (Company performance KPIs are shown above the charts.)

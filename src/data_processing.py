@@ -38,7 +38,7 @@ def load_all_csv_files(data_dir='data', show_rows=5):
     return dataframes, file_mappings
 
 # combine and process raw data into datasets for analysis 
-def process_data(df1, df9, df7, df8, df10, df11, df4, df13):
+def process_data(df1, df9, df7, df8, df10, df12, df4, df13, df15):
     
     # store datasets 
     datasets = {}
@@ -98,8 +98,8 @@ def process_data(df1, df9, df7, df8, df10, df11, df4, df13):
             'total_hours': total_hours,
         })
 
-    # iterate though df11 and add hours to master df based on factor_value flag 
-    for _, row in df11.iterrows():
+    # iterate though activity time df (df12) and add hours to master df based on factor_value flag 
+    for _, row in df12.iterrows():
         date = pd.to_datetime(row['activity_date'])
         hours = row['minutes'] / 60.0
         is_billable = row['factor_value'] == 1.0
@@ -114,9 +114,9 @@ def process_data(df1, df9, df7, df8, df10, df11, df4, df13):
     time_reporting = pd.DataFrame(records)
     datasets['time_reporting'] = time_reporting
     
-    # Left join df4 (main) with df13 based on role_id
+    # Left join df4 (main) with df15 based on role_id to get enddate
     consultants = df4.merge(
-        df13,
+        df15,
         on='role_id',
         how='left'
     )
@@ -334,11 +334,12 @@ def load_process_and_store():
         dataframes, file_mappings = load_all_csv_files()
         for name, df in dataframes.items():
             globals()[name] = df
-        print(f"df1 is from file: {file_mappings['df1']}")
 
-        sales_pipeline, invoices, payments, time_reporting, monthly_totals = process_data(df1, df9, df7, df8, df10, df11, df4, df13)
+        sales_pipeline, invoices, payments, time_reporting, monthly_totals = process_data(
+            df1, df9, df7, df8, df10, df12, df4, df13, df15
+        )
         start_date, end_date = get_common_date_range(invoices, payments, time_reporting)
-        
+
         # Store in session state
         st.session_state.sales_pipeline = sales_pipeline
         st.session_state.invoices = invoices
