@@ -38,7 +38,7 @@ def load_all_csv_files(data_dir='data', show_rows=5):
     return dataframes, file_mappings
 
 # combine and process raw data into datasets for analysis 
-def process_data(df1, df9, df7, df8, df10, df11):
+def process_data(df1, df9, df7, df8, df10, df11, df12):
     
     # store datasets 
     datasets = {}
@@ -114,6 +114,10 @@ def process_data(df1, df9, df7, df8, df10, df11):
     time_reporting = pd.DataFrame(records)
     datasets['time_reporting'] = time_reporting
     
+    # create activity dataset
+    activity_data = prepare_activity_data(df12, df11)
+    datasets['activity_data'] = activity_data
+
     # print info for each dataset
     print('-'*100)
     print("DATASETS CREATED")
@@ -129,7 +133,7 @@ def process_data(df1, df9, df7, df8, df10, df11):
         print('-'*100)
         
     # return all datasets 
-    return sales_pipeline, invoices, payments, time_reporting
+    return sales_pipeline, invoices, payments, time_reporting, activity_data
 
 # get max and min dates from invoices and payments dataframes where we have data from all tables
 def get_common_date_range(df, df2, df3):
@@ -301,7 +305,7 @@ def load_process_and_store():
             globals()[name] = df
         print(f"df1 is from file: {file_mappings['df1']}")
 
-        sales_pipeline, invoices, payments, time_reporting = process_data(df1, df9, df7, df8, df10, df11)
+        sales_pipeline, invoices, payments, time_reporting, activity_data = process_data(df1, df9, df7, df8, df10, df11, df12)
         start_date, end_date = get_common_date_range(invoices, payments, time_reporting)
         
         # Store in session state
@@ -312,12 +316,14 @@ def load_process_and_store():
         st.session_state.start_date = start_date
         st.session_state.end_date = end_date
         st.session_state.data_loaded = True
+        st.session_state.activity_data = activity_data
     
     return (
         st.session_state.sales_pipeline,
         st.session_state.invoices,
         st.session_state.payments,
         st.session_state.time_reporting,
+        st.session_state.activity_data,
         st.session_state.start_date,
         st.session_state.end_date
     )

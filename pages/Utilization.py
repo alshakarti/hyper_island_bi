@@ -8,13 +8,14 @@ from src.data_processing import (
 )
 from src.visualization import (
     plot_monthly_hours_line,
-    create_kpi_cards
+    create_kpi_cards,
+    plot_monthly_activity_hours
 )
 
 import plotly.express as px
 
 # load data
-sales_pipeline, invoices, payments, time_reporting, start_date, end_date = load_process_and_store()
+sales_pipeline, invoices, payments, time_reporting, activity_data, start_date, end_date = load_process_and_store()
 
 # global date filter 
 st.sidebar.subheader("Filter")
@@ -218,3 +219,10 @@ if not monthly_hours.empty:
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.warning("No data available for selected period.")
+
+# -------------------- ACTIVITY DATA ------------------------
+st.markdown("---")
+st.subheader("Activity Log Hours (04/25 - 08/25)")
+fig_activity = plot_monthly_activity_hours(activity_data)
+if fig_activity:
+    st.plotly_chart(fig_activity, use_container_width=True)

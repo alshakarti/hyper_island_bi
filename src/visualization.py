@@ -1259,26 +1259,39 @@ def plot_monthly_activity_hours(df12_11):
     plotly.graph_objects.Figure
         Bar chart figure showing monthly hours per activity.
     """
+    df12_11 = df12_11.copy()
     df12_11['activity_date'] = pd.to_datetime(df12_11['activity_date'])
-
+    
+    # Create year-month column as string for grouping
+    df12_11['year_month'] = df12_11['activity_date'].dt.strftime('%Y-%m')
+    
+    # Aggregate by year-month and activity
     monthly = (df12_11
-               .assign(month=df12_11['activity_date'].dt.to_period('M').dt.to_timestamp())
-               .groupby(['month', 'activity_name'], as_index=False)['hours'].sum()
-               .sort_values('month'))
-
+        .groupby(['year_month', 'activity_name'], as_index=False)['hours'].sum()
+        .sort_values('year_month'))
+    
+    # Create display labels (e.g., "Jan 2023")
+    monthly['month_display'] = pd.to_datetime(monthly['year_month']).dt.strftime('%b %Y')
+    
     fig = px.bar(
         monthly,
-        x='month',
+        x='month_display',
         y='hours',
         color='activity_name',
         barmode='stack',
-        labels={'month': 'Month', 'hours': 'Hours', 'activity_name': 'Activity'},
+        labels={'month_display': 'Month', 'hours': 'Hours', 'activity_name': 'Activity'},
         custom_data=['activity_name']
     )
-
+    
     fig.update_traces(
-        hovertemplate='Month: %{x|%b %Y}<br>Activity: %{customdata[0]}<br>Total: %{y:.2f} h<extra></extra>'
+        hovertemplate='%{x}<br>Activity: %{customdata[0]}<br>Hours: %{y:.1f}<extra></extra>'
     )
-
-    fig.show()
+    
+    fig.update_layout(
+        xaxis_title='Month',
+        yaxis_title='Hours',
+        legend_title='Activity',
+        hovermode='x unified'
+    )
+    
     return fig
