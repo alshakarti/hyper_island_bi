@@ -400,18 +400,12 @@ try:
         sen_agg['util_pct'] = (sen_agg['billable_hours'] / sen_agg['total_hours']).replace([np.inf, -np.inf], 0).fillna(0) * 100
 
         # diagnostics: show mapping coverage and top unmapped employee ids
-        c1, c2 = st.columns([2, 3])
+        c1 = st.columns([1])[0]
         with c1:
             # show a concise prototype insight label with rounded percentage
             pct_int = int(round(coverage_pct)) if total_count else 0
-            st.markdown(f"**Prototype insight — {pct_int}% of hours currently mapped to HR roles (K1–K4).**")
+            st.markdown(f"**Prototype insight: {pct_int}% of hours currently mapped to HR roles (K1–K4).**")
             st.caption(f"Source: {seniority_source or 'none'}")
-        with c2:
-            unmapped = merged[merged['seniority'] == 'Unknown']
-            top_unmapped = unmapped['employee_id'].value_counts().head(8).rename_axis('employee_id').reset_index(name='count')
-            if not top_unmapped.empty:
-                st.markdown("**Top unmapped employee_id (sample)**")
-                st.dataframe(top_unmapped)
 
         # show a stacked bar (billable vs non-billable)
         try:
