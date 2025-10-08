@@ -1280,7 +1280,8 @@ def plot_monthly_activity_hours(df12_11):
         color='activity_name',
         barmode='stack',
         labels={'month_display': 'Month', 'hours': 'Hours', 'activity_name': 'Activity'},
-        custom_data=['activity_name']
+        custom_data=['activity_name'],
+        color_discrete_sequence=px.colors.qualitative.Safe
     )
     
     fig.update_traces(
@@ -1292,6 +1293,164 @@ def plot_monthly_activity_hours(df12_11):
         yaxis_title='Hours',
         legend_title='Activity',
         hovermode='x unified'
+    )
+    
+    return fig
+
+# (WILL) Plot Deals 
+def plot_deal_stage_distribution(df, start_date=None, end_date=None, date_column='create_date', show_trend=False):
+    """
+    Plot monthly deal stage distribution as a stacked bar chart with optional trend line.
+    
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        The sales pipeline dataframe
+    start_date : str, optional
+        Start date for filtering in 'YYYY-MM-DD' format
+    end_date : str, optional
+        End date for filtering in 'YYYY-MM-DD' format
+    date_column : str, default 'create_date'
+        Name of the date column to use for grouping ('create_date' or 'close_date')
+    show_trend : bool, default False
+        Whether to show a regression line for total deal count
+        
+    Returns:
+    --------
+    plotly Figure or None
+    """
+    plot_df = df.copy()
+    
+    # Convert date column to datetime
+    plot_df[date_column] = pd.to_datetime(plot_df[date_column])
+    
+    # Apply date filters with timezone handling
+    if start_date:
+        start_date_dt = pd.to_datetime(start_date)
+        # Handle timezone if present in the dataframe
+        if plot_df[date_column].dt.tz is not None:
+            start_date_dt = start_date_dt.tz_localize('UTC')
+        plot_df = plot_df[plot_df[date_column] >= start_date_dt]
+        
+    if end_date:
+        end_date_dt = pd.to_datetime(end_date)
+        # Handle timezone if present in the dataframe
+        if plot_df[date_column].dt.tz is not None:
+            end_date_dt = end_date_dt.tz_localize('UTC')
+        plot_df = plot_df[plot_df[date_column] <= end_date_dt]
+    
+    # Check if we have data after filtering
+    if plot_df.empty:
+        print("No deal data available after applying date filters.")
+        return None
+    
+    # Create year-month column
+    # Format as "Jan 2025", "Feb 2025", etc.
+    plot_df['year_month'] = plot_df[date_column].dt.strftime('%b %Y')
+
+    # NEW: pick the correct stage column (your sales_pipeline has 'pipeline_stage', not 'deal_stage')
+    stage_col = 'pipeline_stage' if 'pipeline_stage' in plot_df.columns else (
+        'deal_stage' if 'deal_stage' in plot_df.columns else None
+    )
+    if stage_col is None:
+        raise KeyError(f"No stage column found. Available columns: {plot_df.columns.tolist()}")
+
+    # use stage_col instead of hard-coded 'deal_stage'
+    monthly_counts = pd.crosstab(
+        plot_df['year_month'],
+        plot_df[stage_col]
+    )
+
+    # Reset index to make it easier to plot
+    monthly_counts_reset = monthly_counts.reset_index()
+
+    # Melt the dataframe for plotly
+    melted_data = monthly_counts_reset.melt(
+        id_vars='year_month',
+        var_name='deal_stage',   # keep output name as 'deal_stage' for the rest of the code
+        value_name='count'
+    )
+    # Define custom color mapping
+    color_map = {
+        'closedwon': '#28a745',      # Green
+        'closedlost': '#dc3545',     # Red
+    }
+    
+    # Get unique stages and assign neutral colors to any not specified
+    unique_stages = melted_data['deal_stage'].unique()
+    neutral_colors = ['#6c757d', '#95a5a6', '#7f8c8d', '#b0bec5', '#90a4ae']
+    neutral_idx = 0
+
+    for stage in unique_stages:
+        stage_key = str(stage).lower().replace(" ", "").replace("_", "")
+        if stage_key not in color_map:
+            color_map[stage_key] = neutral_colors[neutral_idx % len(neutral_colors)]
+            neutral_idx += 1
+        # map original label to its lowercased color if present
+        elif stage_key in color_map:
+            color_map[stage] = color_map[stage_key]
+    
+    # Create stacked bar chart
+    fig = px.bar(
+        melted_data,
+        x='year_month',
+        y='count',
+        color='deal_stage',
+        color_discrete_map=color_map,
+        labels={
+            'year_month': 'Month',
+            'count': 'Number of Deals',
+            'deal_stage': 'Deal Stage'
+        },
+        text='count',
+        barmode='stack'
+    )
+    
+    # Add regression line if requested
+    if show_trend and len(melted_data['year_month'].unique()) > 1:
+        # Calculate total counts per month for regression line
+        total_counts = melted_data.groupby('year_month')['count'].sum().reset_index()
+        total_counts['x_numeric'] = range(len(total_counts))
+        
+        # Calculate regression line
+        coeffs = np.polyfit(total_counts['x_numeric'], total_counts['count'], 1)
+        trend = np.polyval(coeffs, total_counts['x_numeric'])
+        
+        # Add regression line
+        fig.add_trace(
+            go.Scatter(
+                x=total_counts['year_month'],
+                y=trend,
+                mode='lines',
+                name='Trend',
+                line=dict(color='red', dash='dash', width=2),
+                showlegend=True
+            )
+        )
+    
+    # Format the text on bars to show counts
+    fig.update_traces(
+        texttemplate='%{text}',
+        textposition='inside',
+        selector=dict(type='bar')
+    )
+    
+    # Update layout
+    fig.update_layout(
+        xaxis_title='Month',
+        yaxis_title='Number of Deals',
+        height=430,
+        xaxis={
+        'type': 'category',             
+        'categoryorder': 'category ascending'
+        },
+        hovermode='x unified'
+    )
+    
+    # Update hover template for bars only
+    fig.update_traces(
+        hovertemplate='%{x}<br>%{fullData.name}: %{y}<extra></extra>',
+        selector=dict(type='bar')
     )
     
     return fig

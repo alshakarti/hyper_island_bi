@@ -8,7 +8,8 @@ from src.data_processing import (
 )
 from src.visualization import (
     plot_invoice_amounts_line,
-    create_kpi_cards
+    create_kpi_cards,
+    plot_deal_stage_distribution
 )
 
 # load data
@@ -198,3 +199,21 @@ if fig:
     st.plotly_chart(fig, use_container_width=False)
 else:
     st.warning("No data available for the selected filters.")
+
+
+# Deal Stage Distribution Graph
+st.subheader("Deal Stage Distribution")
+st.write(f"Showing deal stage distribution from {selected_start_month} to {selected_end_month}")
+
+fig_deals = plot_deal_stage_distribution(
+    sales_pipeline,
+    start_date=start_date_str,
+    end_date=end_date_str,
+    date_column='create_date',
+    show_trend=financial_trend_line_bool
+)
+
+if fig_deals:
+    st.plotly_chart(fig_deals, use_container_width=False)
+else:
+    st.warning("No deal stage data available for the selected filters.")
