@@ -94,7 +94,6 @@ def process_data(df1, df9, df7, df8, df10, df11, df4, df13):
             'total_hours': total_hours,
         })
 
-    # ✅ restored correct loop from v1: use df11, not df12
     for _, row in df11.iterrows():
         date = pd.to_datetime(row['activity_date'])
         hours = row['minutes'] / 60.0
@@ -109,8 +108,7 @@ def process_data(df1, df9, df7, df8, df10, df11, df4, df13):
 
     time_reporting = pd.DataFrame(records)
     datasets['time_reporting'] = time_reporting
-
-    # ✅ merge restored to df13 (z.csv) for role enddates — df15 removed
+    
     consultants = df4.merge(df13, on='role_id', how='left')
 
     today = pd.Timestamp.today().normalize()
